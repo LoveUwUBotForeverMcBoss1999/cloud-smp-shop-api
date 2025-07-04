@@ -3,7 +3,7 @@ import json
 import random
 import string
 import asyncio
-import aiohttp
+import requests
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 import discord
@@ -203,10 +203,10 @@ async def send_pterodactyl_command(command):
 
         data = {'command': command}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f'{PTERODACTYL_URL}/command',
-                                    json=data, headers=headers) as response:
-                return response.status == 204
+        # Use requests instead of aiohttp for better compatibility
+        response = requests.post(f'{PTERODACTYL_URL}/command',
+                                 json=data, headers=headers, timeout=10)
+        return response.status_code == 204
     except Exception as e:
         print(f"Error sending command to Pterodactyl: {e}")
         return False
