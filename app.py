@@ -2,99 +2,22 @@ import os
 import json
 import random
 import string
-import asyncio
-import aiohttp
+import requests
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import discord
-from discord.ext import commands
 
 app = Flask(__name__)
 CORS(app)
 
 # Environment variables
-DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 PTERODACTYL_API_KEY = os.getenv('PTERODACTYL_API_KEY')
 PTERODACTYL_SERVER_ID = os.getenv('PTERODACTYL_SERVER_ID', '1a7ce997')
 PTERODACTYL_BASE_URL = os.getenv('PTERODACTYL_BASE_URL', 'https://pterodactyl.file.properties')
 
-# Storage for OTPs (in production, use Redis or database)
+# Storage for OTPs and user data (in production, use Redis or database)
 otps = {}
-
-# Channel ID where cloud_points.txt is stored
-CLOUD_POINTS_CHANNEL_ID = 1390794341764567040
-
-# Discord client for API calls only
-intents = discord.Intents.default()
-intents.message_content = True
-
-
-async def get_discord_client():
-    """Get Discord client for API calls"""
-    client = discord.Client(intents=intents)
-    await client.login(DISCORD_TOKEN)
-    return client
-
-
-async def load_points_from_discord():
-    """Load points from Discord channel"""
-    try:
-        client = await get_discord_client()
-        channel = client.get_channel(CLOUD_POINTS_CHANNEL_ID)
-
-        if not channel:
-            await client.close()
-            return {}
-
-        # Look for existing cloud_points.txt
-        async for message in channel.history(limit=50):
-            if message.attachments:
-                for attachment in message.attachments:
-                    if attachment.filename == 'cloud_points.txt':
-                        content = await attachment.read()
-                        await client.close()
-                        return json.loads(content.decode('utf-8'))
-
-        await client.close()
-        return {}
-
-    except Exception as e:
-        print(f"Error loading points: {e}")
-        return {}
-
-
-async def get_discord_user_info(user_id):
-    """Get Discord user info"""
-    try:
-        client = await get_discord_client()
-        user = await client.fetch_user(user_id)
-
-        user_info = {
-            "username": user.name,
-            "avatar": str(user.avatar.url) if user.avatar else str(user.default_avatar.url)
-        }
-
-        await client.close()
-        return user_info
-
-    except Exception as e:
-        print(f"Error getting user info: {e}")
-        return None
-
-
-async def send_dm_to_user(user_id, message):
-    """Send DM to Discord user"""
-    try:
-        client = await get_discord_client()
-        user = await client.fetch_user(user_id)
-        await user.send(message)
-        await client.close()
-        return True
-
-    except Exception as e:
-        print(f"Error sending DM: {e}")
-        return False
+user_data = {}
 
 
 def load_items():
@@ -111,7 +34,7 @@ def generate_otp():
     return ''.join(random.choices(string.digits, k=6))
 
 
-async def send_pterodactyl_command(command):
+def send_pterodactyl_command(command):
     """Send command to Pterodactyl panel"""
     try:
         url = f"{PTERODACTYL_BASE_URL}/api/client/servers/{PTERODACTYL_SERVER_ID}/command"
@@ -122,12 +45,23 @@ async def send_pterodactyl_command(command):
         }
         data = {'command': command}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=data) as response:
-                return response.status == 204
+        response = requests.post(url, headers=headers, json=data, timeout=10)
+        return response.status_code == 204
     except Exception as e:
         print(f"Error sending command: {e}")
         return False
+
+
+# Mock user data for testing (replace with actual Discord integration)
+def get_mock_user_data(user_id):
+    """Get mock user data for testing"""
+    if str(user_id) not in user_data:
+        user_data[str(user_id)] = {
+            "username": f"User{user_id}",
+            "avatar": "https://cdn.discordapp.com/embed/avatars/0.png",
+            "cloud_points": 500  # Starting points for testing
+        }
+    return user_data[str(user_id)]
 
 
 # Flask API Routes
@@ -138,7 +72,23 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "service": "Cloud Points API",
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.0.0"
+    })
+
+
+@app.route('/api/test')
+def test_endpoint():
+    """Test endpoint to verify API is working"""
+    return jsonify({
+        "message": "API is working!",
+        "endpoints": [
+            "/api/user/{user_id}",
+            "/api/shop/{user_id}/send-otp-dm/",
+            "/api/shop/{user_id}/{otp}/item/{item_number}/{ingame_name}",
+            "/api/item-info/{item_number}",
+            "/api/shop/items"
+        ]
     })
 
 
@@ -146,20 +96,14 @@ def health_check():
 def get_user_info(user_id):
     """Get user information"""
     try:
-        # Get user info from Discord
-        user_info = asyncio.run(get_discord_user_info(user_id))
-        if not user_info:
-            return jsonify({"error": "User not found"}), 404
-
-        # Get points from Discord file
-        points_data = asyncio.run(load_points_from_discord())
-        points = points_data.get(str(user_id), 0)
+        # For now, use mock data. Replace with actual Discord API calls when Discord bot is running
+        user_info = get_mock_user_data(user_id)
 
         return jsonify({
             "discord_id": user_id,
             "username": user_info["username"],
             "avatar": user_info["avatar"],
-            "cloud_points": points
+            "cloud_points": user_info["cloud_points"]
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -167,7 +111,7 @@ def get_user_info(user_id):
 
 @app.route('/api/shop/<int:user_id>/send-otp-dm/', methods=['POST'])
 def send_otp_dm(user_id):
-    """Send OTP to user's DM"""
+    """Send OTP to user's DM (mock for now)"""
     try:
         otp = generate_otp()
         expiry = datetime.now() + timedelta(minutes=5)
@@ -179,17 +123,14 @@ def send_otp_dm(user_id):
             "used": False
         }
 
-        # Send DM
-        message = f"🔐 Your OTP code for ☁️ Cloud Points shop: **{otp}**\n\nThis code expires in 5 minutes."
-        success = asyncio.run(send_dm_to_user(user_id, message))
-
-        if not success:
-            return jsonify({"error": "Failed to send DM"}), 500
-
+        # For now, return OTP in response (for testing)
+        # In production, this would send via Discord DM
         return jsonify({
             "success": True,
-            "message": "OTP sent to user's DM",
-            "expires_at": expiry.isoformat()
+            "message": "OTP generated successfully",
+            "otp": otp,  # Remove this in production
+            "expires_at": expiry.isoformat(),
+            "note": "In production, this OTP would be sent via Discord DM"
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -223,33 +164,34 @@ def purchase_item(user_id, otp, item_number, ingame_name):
         item = items[item_key]
         item_price = int(item["item-price"])
 
-        # Get current points
-        points_data = asyncio.run(load_points_from_discord())
-        user_points = points_data.get(str(user_id), 0)
+        # Get current user data
+        user_info = get_mock_user_data(user_id)
+        user_points = user_info["cloud_points"]
 
         # Check if user has enough points
         if user_points < item_price:
             return jsonify({"error": "Insufficient cloud points"}), 400
 
-        # Execute item command first
+        # Execute item command
         command = item["item-cmd"].replace("{ingame-name}", ingame_name)
-        command_success = asyncio.run(send_pterodactyl_command(command))
+        command_success = send_pterodactyl_command(command)
 
         if not command_success:
             return jsonify({"error": "Failed to execute item command"}), 500
 
+        # Deduct points
+        user_data[str(user_id)]["cloud_points"] -= item_price
+
         # Mark OTP as used
         otps[user_id]["used"] = True
-
-        # Note: Points deduction would need to be handled by the Discord bot
-        # For now, we'll return success but mention points need manual deduction
 
         return jsonify({
             "success": True,
             "message": f"Successfully purchased {item['item-name']}",
             "item": item["item-name"],
             "cost": item_price,
-            "note": "Points will be deducted by the Discord bot"
+            "remaining_points": user_data[str(user_id)]["cloud_points"],
+            "command_executed": command
         })
 
     except Exception as e:
@@ -299,9 +241,37 @@ def get_all_items():
         return jsonify({"error": str(e)}), 500
 
 
-# For Vercel
-def handler(request):
-    return app(request.environ, lambda *args: None)
+# Admin endpoints for testing
+@app.route('/api/admin/add-points/<int:user_id>/<int:points>', methods=['POST'])
+def add_points_admin(user_id, points):
+    """Add points to user (for testing)"""
+    try:
+        user_info = get_mock_user_data(user_id)
+        user_data[str(user_id)]["cloud_points"] += points
+
+        return jsonify({
+            "success": True,
+            "message": f"Added {points} points to user {user_id}",
+            "new_total": user_data[str(user_id)]["cloud_points"]
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/set-points/<int:user_id>/<int:points>', methods=['POST'])
+def set_points_admin(user_id, points):
+    """Set points for user (for testing)"""
+    try:
+        user_info = get_mock_user_data(user_id)
+        user_data[str(user_id)]["cloud_points"] = points
+
+        return jsonify({
+            "success": True,
+            "message": f"Set {points} points for user {user_id}",
+            "new_total": user_data[str(user_id)]["cloud_points"]
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':
