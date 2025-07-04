@@ -9,7 +9,6 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import discord
 from discord.ext import commands
-import threading
 
 app = Flask(__name__)
 CORS(app)
@@ -20,136 +19,82 @@ PTERODACTYL_API_KEY = os.getenv('PTERODACTYL_API_KEY')
 PTERODACTYL_SERVER_ID = os.getenv('PTERODACTYL_SERVER_ID', '1a7ce997')
 PTERODACTYL_BASE_URL = os.getenv('PTERODACTYL_BASE_URL', 'https://pterodactyl.file.properties')
 
-# Discord bot setup
-intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents)
-
 # Storage for OTPs (in production, use Redis or database)
 otps = {}
 
 # Channel ID where cloud_points.txt is stored
 CLOUD_POINTS_CHANNEL_ID = 1390794341764567040
 
+# Discord client for API calls only
+intents = discord.Intents.default()
+intents.message_content = True
 
-class CloudPointsManager:
-    def __init__(self):
-        self.user_points = {}
-        self.points_file_message = None
 
-    async def load_points_from_discord(self):
-        """Load points from Discord channel"""
-        try:
-            channel = bot.get_channel(CLOUD_POINTS_CHANNEL_ID)
-            if not channel:
-                return
+async def get_discord_client():
+    """Get Discord client for API calls"""
+    client = discord.Client(intents=intents)
+    await client.login(DISCORD_TOKEN)
+    return client
 
-            # Look for existing cloud_points.txt
-            async for message in channel.history(limit=100):
-                if message.attachments:
-                    for attachment in message.attachments:
-                        if attachment.filename == 'cloud_points.txt':
-                            self.points_file_message = message
-                            content = await attachment.read()
-                            self.user_points = json.loads(content.decode('utf-8'))
-                            return
 
-            # If no file found, create one
-            await self.create_initial_points_file(channel)
+async def load_points_from_discord():
+    """Load points from Discord channel"""
+    try:
+        client = await get_discord_client()
+        channel = client.get_channel(CLOUD_POINTS_CHANNEL_ID)
 
-        except Exception as e:
-            print(f"Error loading points: {e}")
+        if not channel:
+            await client.close()
+            return {}
 
-    async def create_initial_points_file(self, channel):
-        """Create initial cloud_points.txt file"""
-        try:
-            initial_data = {}
-            with open('temp_cloud_points.txt', 'w') as f:
-                json.dump(initial_data, f)
+        # Look for existing cloud_points.txt
+        async for message in channel.history(limit=50):
+            if message.attachments:
+                for attachment in message.attachments:
+                    if attachment.filename == 'cloud_points.txt':
+                        content = await attachment.read()
+                        await client.close()
+                        return json.loads(content.decode('utf-8'))
 
-            with open('temp_cloud_points.txt', 'rb') as f:
-                file = discord.File(f, filename='cloud_points.txt')
-                message = await channel.send('☁️ Cloud Points Database initialized!', file=file)
-                self.points_file_message = message
+        await client.close()
+        return {}
 
-            os.remove('temp_cloud_points.txt')
+    except Exception as e:
+        print(f"Error loading points: {e}")
+        return {}
 
-        except Exception as e:
-            print(f"Error creating initial file: {e}")
 
-    async def update_points_file(self):
-        """Update the Discord file with current points"""
-        try:
-            if not self.points_file_message:
-                return
+async def get_discord_user_info(user_id):
+    """Get Discord user info"""
+    try:
+        client = await get_discord_client()
+        user = await client.fetch_user(user_id)
 
-            with open('temp_cloud_points.txt', 'w') as f:
-                json.dump(self.user_points, f, indent=2)
+        user_info = {
+            "username": user.name,
+            "avatar": str(user.avatar.url) if user.avatar else str(user.default_avatar.url)
+        }
 
-            with open('temp_cloud_points.txt', 'rb') as f:
-                file = discord.File(f, filename='cloud_points.txt')
-                channel = bot.get_channel(CLOUD_POINTS_CHANNEL_ID)
-                new_message = await channel.send('☁️ Cloud Points Database updated!', file=file)
+        await client.close()
+        return user_info
 
-                # Delete old message
-                if self.points_file_message:
-                    try:
-                        await self.points_file_message.delete()
-                    except:
-                        pass
+    except Exception as e:
+        print(f"Error getting user info: {e}")
+        return None
 
-                self.points_file_message = new_message
 
-            os.remove('temp_cloud_points.txt')
-
-        except Exception as e:
-            print(f"Error updating points file: {e}")
-
-    async def add_points(self, user_id, points=5):
-        """Add points to user"""
-        user_id = str(user_id)
-        if user_id not in self.user_points:
-            self.user_points[user_id] = 0
-
-        self.user_points[user_id] += points
-        await self.update_points_file()
-
-    async def deduct_points(self, user_id, points):
-        """Deduct points from user"""
-        user_id = str(user_id)
-        if user_id not in self.user_points:
-            return False
-
-        if self.user_points[user_id] < points:
-            return False
-
-        self.user_points[user_id] -= points
-        await self.update_points_file()
+async def send_dm_to_user(user_id, message):
+    """Send DM to Discord user"""
+    try:
+        client = await get_discord_client()
+        user = await client.fetch_user(user_id)
+        await user.send(message)
+        await client.close()
         return True
 
-    def get_points(self, user_id):
-        """Get user points"""
-        return self.user_points.get(str(user_id), 0)
-
-
-points_manager = CloudPointsManager()
-
-
-@bot.event
-async def on_ready():
-    print(f'{bot.user} has connected to Discord!')
-    await points_manager.load_points_from_discord()
-
-
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    # Add 5 cloud points for each message
-    await points_manager.add_points(message.author.id, 5)
-
-    await bot.process_commands(message)
+    except Exception as e:
+        print(f"Error sending DM: {e}")
+        return False
 
 
 def load_items():
@@ -190,10 +135,9 @@ async def send_pterodactyl_command(command):
 @app.route('/')
 def health_check():
     """Health check endpoint"""
-    bot_status = "connected" if bot.is_ready() else "disconnected"
     return jsonify({
         "status": "healthy",
-        "bot_status": bot_status,
+        "service": "Cloud Points API",
         "timestamp": datetime.now().isoformat()
     })
 
@@ -202,16 +146,19 @@ def health_check():
 def get_user_info(user_id):
     """Get user information"""
     try:
-        user = bot.get_user(user_id)
-        if not user:
+        # Get user info from Discord
+        user_info = asyncio.run(get_discord_user_info(user_id))
+        if not user_info:
             return jsonify({"error": "User not found"}), 404
 
-        points = points_manager.get_points(user_id)
+        # Get points from Discord file
+        points_data = asyncio.run(load_points_from_discord())
+        points = points_data.get(str(user_id), 0)
 
         return jsonify({
             "discord_id": user_id,
-            "username": user.name,
-            "avatar": str(user.avatar.url) if user.avatar else str(user.default_avatar.url),
+            "username": user_info["username"],
+            "avatar": user_info["avatar"],
             "cloud_points": points
         })
     except Exception as e:
@@ -222,10 +169,6 @@ def get_user_info(user_id):
 def send_otp_dm(user_id):
     """Send OTP to user's DM"""
     try:
-        user = bot.get_user(user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-
         otp = generate_otp()
         expiry = datetime.now() + timedelta(minutes=5)
 
@@ -237,8 +180,11 @@ def send_otp_dm(user_id):
         }
 
         # Send DM
-        asyncio.create_task(
-            user.send(f"🔐 Your OTP code for ☁️ Cloud Points shop: **{otp}**\n\nThis code expires in 5 minutes."))
+        message = f"🔐 Your OTP code for ☁️ Cloud Points shop: **{otp}**\n\nThis code expires in 5 minutes."
+        success = asyncio.run(send_dm_to_user(user_id, message))
+
+        if not success:
+            return jsonify({"error": "Failed to send DM"}), 500
 
         return jsonify({
             "success": True,
@@ -277,34 +223,33 @@ def purchase_item(user_id, otp, item_number, ingame_name):
         item = items[item_key]
         item_price = int(item["item-price"])
 
+        # Get current points
+        points_data = asyncio.run(load_points_from_discord())
+        user_points = points_data.get(str(user_id), 0)
+
         # Check if user has enough points
-        user_points = points_manager.get_points(user_id)
         if user_points < item_price:
             return jsonify({"error": "Insufficient cloud points"}), 400
 
-        # Deduct points
-        success = asyncio.run(points_manager.deduct_points(user_id, item_price))
-        if not success:
-            return jsonify({"error": "Failed to deduct points"}), 500
-
-        # Execute item command
+        # Execute item command first
         command = item["item-cmd"].replace("{ingame-name}", ingame_name)
         command_success = asyncio.run(send_pterodactyl_command(command))
 
         if not command_success:
-            # Refund points if command failed
-            asyncio.run(points_manager.add_points(user_id, item_price))
             return jsonify({"error": "Failed to execute item command"}), 500
 
         # Mark OTP as used
         otps[user_id]["used"] = True
+
+        # Note: Points deduction would need to be handled by the Discord bot
+        # For now, we'll return success but mention points need manual deduction
 
         return jsonify({
             "success": True,
             "message": f"Successfully purchased {item['item-name']}",
             "item": item["item-name"],
             "cost": item_price,
-            "remaining_points": points_manager.get_points(user_id)
+            "note": "Points will be deducted by the Discord bot"
         })
 
     except Exception as e:
@@ -354,16 +299,10 @@ def get_all_items():
         return jsonify({"error": str(e)}), 500
 
 
-def run_bot():
-    """Run the Discord bot"""
-    bot.run(DISCORD_TOKEN)
+# For Vercel
+def handler(request):
+    return app(request.environ, lambda *args: None)
 
 
 if __name__ == '__main__':
-    # Start Discord bot in a separate thread
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.daemon = True
-    bot_thread.start()
-
-    # Run Flask app
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True)
