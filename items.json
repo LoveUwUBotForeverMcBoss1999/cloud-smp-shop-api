@@ -1,0 +1,62 @@
+{
+  "1": {
+    "item-name": "Golden Apple",
+    "item-price": "100",
+    "item-cmd": "give {ingame-name} golden_apple",
+    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest?cb=20200521041809"
+  },
+  "2": {
+    "item-name": "Diamond Sword",
+    "item-price": "250",
+    "item-cmd": "give {ingame-name} diamond_sword",
+    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/4/44/Diamond_Sword_JE3_BE3.png/revision/latest?cb=20200217235849"
+  },
+  "3": {
+    "item-name": "Netherite Ingot",
+    "item-price": "500",
+    "item-cmd": "give {ingame-name} netherite_ingot",
+    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/4/41/Netherite_Ingot_JE1_BE1.png/revision/latest?cb=20200217235903"
+  },
+  "4": {
+    "item-name": "Enchanted Book (Mending)",
+    "item-price": "300",
+    "item-cmd": "give {ingame-name} enchanted_book{StoredEnchantments:[{id:mending,lvl:1}]}",
+    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/c/ca/Enchanted_Book_JE2_BE2.png/revision/latest?cb=20200217235836"
+  },
+  "5": {
+    "item-name": "Elytra",
+    "item-price": "1000",
+    "item-cmd": "give {ingame-name} elytra",
+    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/3/32/Elytra_JE2_BE2.png/revision/latest?cb=20200217235838"
+  },
+  "6": {
+    "item-name": "Shulker Box",
+    "item-price": "150",
+    "item-cmd": "give {ingame-name} shulker_box",
+    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/4/4b/Shulker_Box_JE2_BE2.png/revision/latest?cb=20200217235855"
+  },
+  "7": {
+    "item-name": "Totem of Undying",
+    "item-price": "800",
+    "item-cmd": "give {ingame-name} totem_of_undying",
+    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/0/0c/Totem_of_Undying_JE2_BE2.png/revision/latest?cb=20200217235857"
+  },
+  "8": {
+    "item-name": "Dragon Egg",
+    "item-price": "2000",
+    "item-cmd": "give {ingame-name} dragon_egg",
+    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/b/b2/Dragon_Egg_JE4.png/revision/latest?cb=20200217235837"
+  },
+  "9": {
+    "item-name": "Beacon",
+    "item-price": "600",
+    "item-cmd": "give {ingame-name} beacon",
+    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/2/2f/Beacon_JE2_BE2.png/revision/latest?cb=20200217235831"
+  },
+  "10": {
+    "item-name": "Nether Star",
+    "item-price": "400",
+    "item-cmd": "give {ingame-name} nether_star",
+    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/c/c6/Nether_Star_JE2_BE2.png/revision/latest?cb=20200217235851"
+  }
+}
