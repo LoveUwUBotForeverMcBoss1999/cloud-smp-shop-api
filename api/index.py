@@ -2,11 +2,9 @@ import os
 import json
 import random
 import string
-import asyncio
 import requests
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request
-import discord
 
 app = Flask(__name__)
 
@@ -88,111 +86,177 @@ def format_cloud_points(points_data):
     return '\n'.join(lines)
 
 
-async def get_discord_client():
-    """Get Discord client instance"""
-    client = discord.Client(intents=discord.Intents.default())
-    await client.login(DISCORD_TOKEN)
-    return client
+def parse_cloud_points(content):
+    """Parse cloud points from file content"""
+    points_data = {}
+    for line in content.strip().split('\n'):
+        if line.strip():
+            try:
+                parts = line.split(':')
+                if len(parts) == 2:
+                    user_id = parts[0].strip()
+                    points = int(parts[1].strip())
+                    points_data[user_id] = points
+            except ValueError:
+                continue
+    return points_data
 
 
-async def download_cloud_points():
-    """Download and parse cloud points file from Discord"""
+def format_cloud_points(points_data):
+    """Format cloud points data for file content"""
+    lines = []
+    for user_id, points in points_data.items():
+        lines.append(f"{user_id}:{points}")
+    return '\n'.join(lines)
+
+
+def download_cloud_points():
+    """Download and parse cloud points file from Discord using REST API"""
     try:
-        client = await get_discord_client()
-        channel = client.get_channel(POINTS_CHANNEL_ID)
-        if not channel:
-            await client.close()
+        headers = {
+            'Authorization': f'Bot {DISCORD_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+
+        # Get recent messages from the channel
+        response = requests.get(
+            f'https://discord.com/api/v10/channels/{POINTS_CHANNEL_ID}/messages?limit=100',
+            headers=headers
+        )
+
+        if response.status_code != 200:
+            print(f"Error getting messages: {response.status_code}")
             return {}
 
-        # Find the cloud points file
-        async for message in channel.history(limit=100):
-            if message.attachments:
-                for attachment in message.attachments:
-                    if attachment.filename == CLOUD_POINTS_FILE:
-                        content = await attachment.read()
-                        await client.close()
-                        return parse_cloud_points(content.decode('utf-8'))
+        messages = response.json()
 
-        await client.close()
+        # Find the cloud points file
+        for message in messages:
+            if message.get('attachments'):
+                for attachment in message['attachments']:
+                    if attachment['filename'] == CLOUD_POINTS_FILE:
+                        # Download the file
+                        file_response = requests.get(attachment['url'])
+                        if file_response.status_code == 200:
+                            return parse_cloud_points(file_response.text)
+
         return {}
     except Exception as e:
         print(f"Error downloading cloud points: {e}")
         return {}
 
 
-async def upload_cloud_points(points_data):
-    """Upload cloud points file to Discord"""
+def upload_cloud_points(points_data):
+    """Upload cloud points file to Discord using REST API"""
     try:
-        client = await get_discord_client()
-        channel = client.get_channel(POINTS_CHANNEL_ID)
-        if not channel:
-            await client.close()
-            return False
+        headers = {
+            'Authorization': f'Bot {DISCORD_TOKEN}'
+        }
 
-        # Delete existing file
-        async for message in channel.history(limit=100):
-            if message.attachments:
-                for attachment in message.attachments:
-                    if attachment.filename == CLOUD_POINTS_FILE:
-                        await message.delete()
-                        break
+        # First, delete existing file message
+        response = requests.get(
+            f'https://discord.com/api/v10/channels/{POINTS_CHANNEL_ID}/messages?limit=100',
+            headers={'Authorization': f'Bot {DISCORD_TOKEN}', 'Content-Type': 'application/json'}
+        )
+
+        if response.status_code == 200:
+            messages = response.json()
+            for message in messages:
+                if message.get('attachments'):
+                    for attachment in message['attachments']:
+                        if attachment['filename'] == CLOUD_POINTS_FILE:
+                            # Delete the message
+                            requests.delete(
+                                f'https://discord.com/api/v10/channels/{POINTS_CHANNEL_ID}/messages/{message["id"]}',
+                                headers={'Authorization': f'Bot {DISCORD_TOKEN}'}
+                            )
+                            break
 
         # Upload new file
         content = format_cloud_points(points_data)
-        with open(f'/tmp/{CLOUD_POINTS_FILE}', 'w') as f:
-            f.write(content)
+        files = {
+            'file': (CLOUD_POINTS_FILE, content, 'text/plain')
+        }
 
-        with open(f'/tmp/{CLOUD_POINTS_FILE}', 'rb') as f:
-            file = discord.File(f, filename=CLOUD_POINTS_FILE)
-            await channel.send(file=file)
+        response = requests.post(
+            f'https://discord.com/api/v10/channels/{POINTS_CHANNEL_ID}/messages',
+            headers=headers,
+            files=files
+        )
 
-        os.remove(f'/tmp/{CLOUD_POINTS_FILE}')
-        await client.close()
-        return True
+        return response.status_code == 200
     except Exception as e:
         print(f"Error uploading cloud points: {e}")
         return False
 
 
-async def send_discord_dm(user_id, message):
-    """Send DM to Discord user"""
+def send_discord_dm(user_id, message):
+    """Send DM to Discord user using REST API"""
     try:
-        client = await get_discord_client()
-        user = await client.fetch_user(int(user_id))
-        if not user:
-            await client.close()
+        headers = {
+            'Authorization': f'Bot {DISCORD_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+
+        # Create DM channel
+        dm_response = requests.post(
+            'https://discord.com/api/v10/users/@me/channels',
+            headers=headers,
+            json={'recipient_id': user_id}
+        )
+
+        if dm_response.status_code != 200:
             return False
 
-        await user.send(message)
-        await client.close()
-        return True
+        dm_channel = dm_response.json()
+
+        # Send message
+        msg_response = requests.post(
+            f'https://discord.com/api/v10/channels/{dm_channel["id"]}/messages',
+            headers=headers,
+            json={'content': message}
+        )
+
+        return msg_response.status_code == 200
     except Exception as e:
         print(f"Error sending DM: {e}")
         return False
 
 
-async def get_discord_user_info(user_id):
-    """Get Discord user information"""
+def get_discord_user_info(user_id):
+    """Get Discord user information using REST API"""
     try:
-        client = await get_discord_client()
-        user = await client.fetch_user(int(user_id))
-        if not user:
-            await client.close()
+        headers = {
+            'Authorization': f'Bot {DISCORD_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+
+        response = requests.get(
+            f'https://discord.com/api/v10/users/{user_id}',
+            headers=headers
+        )
+
+        if response.status_code != 200:
             return None
 
-        user_info = {
-            'discord_id': str(user.id),
-            'username': user.display_name,
-            'avatar_url': str(user.avatar.url) if user.avatar else str(user.default_avatar.url)
+        user_data = response.json()
+
+        # Build avatar URL
+        avatar_url = f'https://cdn.discordapp.com/embed/avatars/{int(user_data["discriminator"]) % 5}.png'
+        if user_data.get('avatar'):
+            avatar_url = f'https://cdn.discordapp.com/avatars/{user_id}/{user_data["avatar"]}.png'
+
+        return {
+            'discord_id': user_id,
+            'username': user_data.get('global_name') or user_data.get('username', 'Unknown'),
+            'avatar_url': avatar_url
         }
-        await client.close()
-        return user_info
     except Exception as e:
         print(f"Error getting user info: {e}")
         return None
 
 
-async def send_pterodactyl_command(command):
+def send_pterodactyl_command(command):
     """Send command to Pterodactyl panel"""
     try:
         headers = {
@@ -203,7 +267,6 @@ async def send_pterodactyl_command(command):
 
         data = {'command': command}
 
-        # Use requests instead of aiohttp for better compatibility
         response = requests.post(f'{PTERODACTYL_URL}/command',
                                  json=data, headers=headers, timeout=10)
         return response.status_code == 204
@@ -212,20 +275,17 @@ async def send_pterodactyl_command(command):
         return False
 
 
-# Flask API Routes
 @app.route('/api/user/<user_id>')
 def get_user_info(user_id):
     try:
         # Get Discord user info
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        user_info = loop.run_until_complete(get_discord_user_info(user_id))
+        user_info = get_discord_user_info(user_id)
 
         if not user_info:
             return jsonify({'error': 'User not found'}), 404
 
         # Get cloud points
-        cloud_points = loop.run_until_complete(download_cloud_points())
+        cloud_points = download_cloud_points()
         points = cloud_points.get(user_id, 0)
 
         user_info['cloud_points'] = points
@@ -248,11 +308,8 @@ def send_otp_dm(user_id):
         }
 
         # Send DM to user
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
         message = f"🔐 Your OTP for ☁️ Cloud Points Shop: `{otp}`\n⏰ Expires in 5 minutes"
-        dm_sent = loop.run_until_complete(send_discord_dm(user_id, message))
+        dm_sent = send_discord_dm(user_id, message)
 
         if not dm_sent:
             return jsonify({'error': 'Unable to send DM to user'}), 403
@@ -286,9 +343,7 @@ def purchase_item(user_id, otp, item_number, ingame_name):
         item_price = int(item['item-price'])
 
         # Get current cloud points
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        cloud_points = loop.run_until_complete(download_cloud_points())
+        cloud_points = download_cloud_points()
 
         # Check if user has enough points
         user_points = cloud_points.get(user_id, 0)
@@ -297,14 +352,14 @@ def purchase_item(user_id, otp, item_number, ingame_name):
 
         # Send command to Pterodactyl
         command = item['item-cmd'].replace('{ingame-name}', ingame_name)
-        command_sent = loop.run_until_complete(send_pterodactyl_command(command))
+        command_sent = send_pterodactyl_command(command)
 
         if not command_sent:
             return jsonify({'error': 'Failed to execute command'}), 500
 
         # Deduct points and upload
         cloud_points[user_id] -= item_price
-        upload_success = loop.run_until_complete(upload_cloud_points(cloud_points))
+        upload_success = upload_cloud_points(cloud_points)
 
         if not upload_success:
             return jsonify({'error': 'Failed to update points'}), 500
