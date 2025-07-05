@@ -88,5 +88,11 @@
     "item-price": "900",
     "item-cmd": "give {ingame-name} enchanted_golden_apple 1",
     "item-icon": "https://cloud-smp.mcboss.top/icons/Enchanted_Golden_Apple_JE2_BE2.webp"
+  },
+  "16": {
+    "item-name": "500 Claim Blocks",
+    "item-price": "150",
+    "item-cmd": "adjustbonusclaimblocks {ingame-name} 500",
+    "item-icon": "https://cloud-smp.mcboss.top/icons/claimblocks.avif"
   }
 }
