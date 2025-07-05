@@ -8,6 +8,14 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
+# Add CORS headers to all responses
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
 # Configuration
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 PTERODACTYL_API_KEY = os.getenv('PTERODACTYL_API_KEY')
@@ -366,6 +374,17 @@ def get_all_items():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# Add preflight OPTIONS handler for CORS
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = jsonify({})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add('Access-Control-Allow-Headers', "*")
+        response.headers.add('Access-Control-Allow-Methods', "*")
+        return response
 
 
 if __name__ == '__main__':
