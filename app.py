@@ -178,39 +178,7 @@ def load_items():
             return items
     except FileNotFoundError:
         logger.error("items.json file not found")
-        # Return default items if file doesn't exist
-        return {
-            "1": {"item-name": "Golden Apple", "item-price": 100, "item-icon": "🍎",
-                  "item-cmd": "give {ingame-name} golden_apple 1"},
-            "2": {"item-name": "Diamond Sword", "item-price": 250, "item-icon": "⚔️",
-                  "item-cmd": "give {ingame-name} diamond_sword 1"},
-            "3": {"item-name": "Enchanted Diamond Pickaxe", "item-price": 500, "item-icon": "⛏️",
-                  "item-cmd": "give {ingame-name} diamond_pickaxe 1"},
-            "4": {"item-name": "Netherite Helmet", "item-price": 750, "item-icon": "🪖",
-                  "item-cmd": "give {ingame-name} netherite_helmet 1"},
-            "5": {"item-name": "Ender Chest", "item-price": 200, "item-icon": "📦",
-                  "item-cmd": "give {ingame-name} ender_chest 1"},
-            "6": {"item-name": "Shulker Box", "item-price": 300, "item-icon": "🎁",
-                  "item-cmd": "give {ingame-name} shulker_box 1"},
-            "7": {"item-name": "Elytra", "item-price": 1000, "item-icon": "🪶",
-                  "item-cmd": "give {ingame-name} elytra 1"},
-            "8": {"item-name": "Beacon", "item-price": 800, "item-icon": "🔥",
-                  "item-cmd": "give {ingame-name} beacon 1"},
-            "9": {"item-name": "Totem of Undying", "item-price": 600, "item-icon": "🛡️",
-                  "item-cmd": "give {ingame-name} totem_of_undying 1"},
-            "10": {"item-name": "Dragon Egg", "item-price": 1500, "item-icon": "🥚",
-                   "item-cmd": "give {ingame-name} dragon_egg 1"},
-            "11": {"item-name": "Stack of Diamonds", "item-price": 400, "item-icon": "💎",
-                   "item-cmd": "give {ingame-name} diamond 64"},
-            "12": {"item-name": "Stack of Emeralds", "item-price": 350, "item-icon": "💚",
-                   "item-cmd": "give {ingame-name} emerald 64"},
-            "13": {"item-name": "Mending Book", "item-price": 450, "item-icon": "📚",
-                   "item-cmd": "give {ingame-name} enchanted_book{StoredEnchantments:[{id:mending,lvl:1}]} 1"},
-            "14": {"item-name": "Trident", "item-price": 550, "item-icon": "🔱",
-                   "item-cmd": "give {ingame-name} trident 1"},
-            "15": {"item-name": "Notch Apple", "item-price": 900, "item-icon": "🌟",
-                   "item-cmd": "give {ingame-name} enchanted_golden_apple 1"}
-        }
+        return {}
     except json.JSONDecodeError as e:
         logger.error(f"Error parsing items.json: {e}")
         return {}
@@ -421,6 +389,10 @@ def health_check():
     """Health check endpoint"""
     cleanup_expired_otps()
 
+    # Get items count from items.json
+    items = load_items()
+    items_count = len(items) if items else 0
+
     status = {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
@@ -430,7 +402,8 @@ def health_check():
         "pterodactyl_base_url": PTERODACTYL_BASE_URL,
         "active_otps": len(active_otps),
         "cached_users": len(points_cache),
-        "cache_age_seconds": int(time.time() - cache_timestamp) if cache_timestamp > 0 else 0
+        "cache_age_seconds": int(time.time() - cache_timestamp) if cache_timestamp > 0 else 0,
+        "shop_items_loaded": items_count
     }
     return jsonify(status)
 
@@ -542,7 +515,7 @@ def send_otp_dm(user_id):
 
 @app.route('/api/shop/<user_id>/<otp>/item/<item_number>/<ingame_name>', methods=['POST'])
 def purchase_item(user_id, otp, item_number, ingame_name):
-    """Purchase item using OTP verification - COMPLETELY REWRITTEN"""
+    """Purchase item using OTP verification"""
     try:
         logger.info(f"🛒 Purchase request: user_id={user_id}, otp={otp}, item={item_number}, ingame={ingame_name}")
 
@@ -587,7 +560,7 @@ def purchase_item(user_id, otp, item_number, ingame_name):
 
         logger.info(f"✅ OTP verified for user {user_id_str}")
 
-        # Load items
+        # Load items from items.json
         items = load_items()
         if not items:
             logger.error("❌ No items available")
