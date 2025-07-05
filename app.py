@@ -367,6 +367,51 @@ def cleanup_expired_otps():
         logger.info(f"Cleaned up {len(expired_users)} expired OTPs")
 
 
+def send_purchase_log_to_discord(user_id, username, item_name, item_price, ingame_name):
+    """Send purchase log to Discord channel for points deduction"""
+    try:
+        # Shop log channel ID
+        LOG_CHANNEL_ID = 1391019862389686392
+
+        headers = get_discord_headers()
+
+        # Create embed for purchase log
+        embed_data = {
+            "title": "🛒 Shop Purchase Log",
+            "description": f"**{username}** purchased **{item_name}**",
+            "color": 0x00FF00,  # Green color for successful purchase
+            "fields": [
+                {"name": "User ID", "value": str(user_id), "inline": True},
+                {"name": "Username", "value": username, "inline": True},
+                {"name": "In-Game Name", "value": ingame_name, "inline": True},
+                {"name": "Item", "value": item_name, "inline": True},
+                {"name": "Price", "value": f"☁️ {item_price}", "inline": True},
+                {"name": "Status", "value": "✅ Successful", "inline": True}
+            ],
+            "footer": {"text": "CloudSMP Shop System"},
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # Send message to log channel
+        message_url = f"{DISCORD_API_BASE}/channels/{LOG_CHANNEL_ID}/messages"
+        message_data = {
+            'embeds': [embed_data],
+            'content': f"SHOP_PURCHASE:{user_id}:{item_price}:{username}:{item_name}"  # Bot will read this content
+        }
+
+        response = requests.post(message_url, headers=headers, json=message_data, timeout=10)
+
+        if response.status_code == 200:
+            logger.info(f"✅ Purchase log sent to Discord for user {user_id}")
+            return True
+        else:
+            logger.error(f"❌ Failed to send purchase log: {response.status_code} - {response.text}")
+            return False
+
+    except Exception as e:
+        logger.error(f"❌ Error sending purchase log to Discord: {e}")
+        return False
+
 # CORS handling
 @app.after_request
 def after_request(response):
@@ -384,44 +429,6 @@ def handle_preflight():
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
         response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
         return response
-
-
-def send_purchase_log(user_id, username, item_name, item_price, ingame_name):
-    """Send purchase log to Discord channel"""
-    try:
-        headers = get_discord_headers()
-
-        # Channel ID for purchase logs
-        LOG_CHANNEL_ID = 1391019862389686392
-
-        embed_data = {
-            "title": "🛒 Shop Purchase Log",
-            "description": f"**{username}** purchased **{item_name}**",
-            "color": 0x00ff00,  # Green color
-            "fields": [
-                {"name": "User ID", "value": user_id, "inline": True},
-                {"name": "In-game Name", "value": ingame_name, "inline": True},
-                {"name": "Item Price", "value": f"☁️ {item_price}", "inline": True},
-                {"name": "Purchase Time", "value": datetime.now().strftime('%Y-%m-%d %H:%M:%S'), "inline": False}
-            ],
-            "footer": {"text": "CloudSMP Shop System"}
-        }
-
-        url = f"{DISCORD_API_BASE}/channels/{LOG_CHANNEL_ID}/messages"
-        message_data = {'embeds': [embed_data]}
-
-        response = requests.post(url, headers=headers, json=message_data, timeout=10)
-
-        if response.status_code == 200:
-            logger.info(f"Purchase log sent successfully for user {user_id}")
-            return True
-        else:
-            logger.error(f"Failed to send purchase log: {response.status_code}")
-            return False
-
-    except Exception as e:
-        logger.error(f"Error sending purchase log: {e}")
-        return False
 
 
 @app.route('/')
@@ -635,7 +642,6 @@ def purchase_item(user_id, otp, item_number, ingame_name):
         logger.info(f"🎮 Executing command: {command}")
 
         # Send command to Pterodactyl
-        # Send command to Pterodactyl
         command_success = send_pterodactyl_command(command)
 
         if not command_success:
@@ -646,9 +652,13 @@ def purchase_item(user_id, otp, item_number, ingame_name):
         active_otps[user_id_str]["used"] = True
         logger.info(f"✅ OTP marked as used for user {user_id_str}")
 
-        # ADD THIS: Send purchase log to Discord
-        username = user_data.get("username", "Unknown")
-        send_purchase_log(user_id, username, item["item-name"], item_price, ingame_name)
+        # Send purchase log to Discord channel for points deduction
+        try:
+            purchase_log_sent = send_purchase_log_to_discord(user_id, user_data.get("username", "Unknown"), item["item-name"], item_price, ingame_name)
+            logger.info(f"📝 Purchase log sent to Discord: {purchase_log_sent}")
+        except Exception as e:
+            logger.error(f"⚠️ Failed to send purchase log to Discord: {e}")
+            # Continue with success response even if log fails
 
         logger.info(
             f"🎉 Purchase completed successfully: User {user_id} ({ingame_name}) bought {item['item-name']} for {item_price} points")
