@@ -8,14 +8,6 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
-# Add CORS headers to all responses
-@app.after_request
-def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-    return response
-
 # Configuration
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 PTERODACTYL_API_KEY = os.getenv('PTERODACTYL_API_KEY')
@@ -164,6 +156,30 @@ def send_pterodactyl_command(command):
     except Exception as e:
         print(f"Error sending command: {e}")
         return False
+
+
+# CORS handling - consolidated into one place
+@app.after_request
+def after_request(response):
+    # Only set CORS headers if they haven't been set already
+    if 'Access-Control-Allow-Origin' not in response.headers:
+        response.headers['Access-Control-Allow-Origin'] = '*'
+    if 'Access-Control-Allow-Headers' not in response.headers:
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    if 'Access-Control-Allow-Methods' not in response.headers:
+        response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+    return response
+
+
+# Handle preflight OPTIONS requests
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = jsonify({})
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+        response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+        return response
 
 
 @app.route('/')
@@ -374,17 +390,6 @@ def get_all_items():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-# Add preflight OPTIONS handler for CORS
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        response = jsonify({})
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add('Access-Control-Allow-Headers', "*")
-        response.headers.add('Access-Control-Allow-Methods', "*")
-        return response
 
 
 if __name__ == '__main__':
