@@ -9,84 +9,84 @@
     "item-name": "Diamond Sword",
     "item-price": "250",
     "item-cmd": "give {ingame-name} diamond_sword 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "3": {
     "item-name": "Enchanted Diamond Pickaxe",
     "item-price": "500",
     "item-cmd": "give {ingame-name} diamond_pickaxe{Enchantments:[{id:efficiency,lvl:5},{id:unbreaking,lvl:3}]} 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "4": {
     "item-name": "Netherite Helmet",
     "item-price": "750",
     "item-cmd": "give {ingame-name} netherite_helmet 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "5": {
     "item-name": "Ender Chest",
     "item-price": "200",
     "item-cmd": "give {ingame-name} ender_chest 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "6": {
     "item-name": "Shulker Box",
     "item-price": "300",
     "item-cmd": "give {ingame-name} shulker_box 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "7": {
     "item-name": "Elytra",
     "item-price": "1000",
     "item-cmd": "give {ingame-name} elytra 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "8": {
     "item-name": "Beacon",
     "item-price": "800",
     "item-cmd": "give {ingame-name} beacon 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "9": {
     "item-name": "Totem of Undying",
     "item-price": "600",
     "item-cmd": "give {ingame-name} totem_of_undying 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "10": {
     "item-name": "Dragon Egg",
     "item-price": "1500",
     "item-cmd": "give {ingame-name} dragon_egg 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "11": {
     "item-name": "Stack of Diamonds",
     "item-price": "400",
     "item-cmd": "give {ingame-name} diamond 64",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "12": {
     "item-name": "Stack of Emeralds",
     "item-price": "350",
     "item-cmd": "give {ingame-name} emerald 64",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "13": {
     "item-name": "Mending Book",
     "item-price": "450",
     "item-cmd": "give {ingame-name} enchanted_book{StoredEnchantments:[{id:mending,lvl:1}]} 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "14": {
     "item-name": "Trident",
     "item-price": "550",
     "item-cmd": "give {ingame-name} trident 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "15": {
     "item-name": "Notch Apple",
     "item-price": "900",
     "item-cmd": "give {ingame-name} enchanted_golden_apple 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   }
 }
