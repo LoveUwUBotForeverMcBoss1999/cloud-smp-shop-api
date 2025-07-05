@@ -28,7 +28,7 @@ active_otps = {}
 # In-memory points storage for API (will be replaced by reading from Discord)
 points_cache = {}
 cache_timestamp = 0
-CACHE_DURATION = 300  # 5 minutes
+CACHE_DURATION = 60  # 1 minute instead of 5 minutes
 
 
 def get_discord_headers():
@@ -235,33 +235,18 @@ def get_user_from_channel():
             logger.info(f"Updated user cache with {len(discord_data)} users")
             return discord_data
 
-        # If Discord fetch fails, try to use fallback data or return empty
-        logger.warning("Failed to fetch from Discord, using fallback data")
-
-        # Fallback mock data for testing
-        fallback_data = {
-            "1237079597124812862": {
-                "username": "ItzMcBoss",
-                "points": 1500,
-                "messages": 250,
-                "last_updated": datetime.now().isoformat()
-            },
-            "123456789": {
-                "username": "TestUser",
-                "points": 1200,
-                "messages": 450,
-                "last_updated": datetime.now().isoformat()
-            }
-        }
-
-        points_cache = fallback_data
+        # If Discord fetch fails, clear cache and return empty
+        logger.warning("Failed to fetch from Discord, clearing cache")
+        points_cache = {}
         cache_timestamp = current_time
-        return fallback_data
+        return {}
 
     except Exception as e:
         logger.error(f"Error getting user data: {e}")
-        return points_cache if points_cache else {}
-
+        # Clear cache on error
+        points_cache = {}
+        cache_timestamp = current_time
+        return {}
 
 def generate_otp():
     """Generate 6-digit OTP"""
@@ -783,6 +768,15 @@ def not_found(error):
 def internal_error(error):
     logger.error(f"Internal server error: {error}")
     return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route('/api/admin/clear-cache', methods=['POST'])
+def clear_cache():
+    """Clear user data cache"""
+    global points_cache, cache_timestamp
+    points_cache = {}
+    cache_timestamp = 0
+    return jsonify({"message": "Cache cleared successfully"})
 
 
 if __name__ == '__main__':
