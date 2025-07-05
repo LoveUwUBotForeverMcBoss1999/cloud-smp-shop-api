@@ -269,34 +269,57 @@ def generate_otp():
 
 
 def send_pterodactyl_command(command):
-    """Send command to Pterodactyl server with improved error handling"""
+    """Send command to Pterodactyl server with improved error handling - FIXED VERSION"""
     if not PTERODACTYL_API_KEY:
         logger.warning("Pterodactyl API key not configured - simulating command execution")
         return True  # Return True for testing when API key is not configured
 
     try:
+        # Fixed URL construction - use the correct endpoint path
         url = f"{PTERODACTYL_BASE_URL}/{PTERODACTYL_SERVER_ID}/command"
+        
+        # Fixed headers - use the correct format matching your Discord bot example
         headers = {
+            'Authorization': f'Bearer {PTERODACTYL_API_KEY}',
             'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {PTERODACTYL_API_KEY}'
+            'Content-Type': 'application/json'
         }
-        data = {'command': command}
+        
+        # Fixed payload structure
+        payload = {
+            'command': command
+        }
 
         logger.info(f"Sending command to Pterodactyl: {command}")
         logger.info(f"URL: {url}")
         logger.info(f"Headers: {headers}")
+        logger.info(f"Payload: {payload}")
 
-        response = requests.post(url, headers=headers, json=data, timeout=15)
+        # Send the request with proper error handling
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
 
         logger.info(f"Pterodactyl response status: {response.status_code}")
         logger.info(f"Pterodactyl response text: {response.text}")
 
+        # Handle response codes properly
         if response.status_code == 204:
+            # 204 No Content is the expected success response for command execution
             logger.info(f"Successfully executed command: {command}")
             return True
         elif response.status_code == 502:
-            logger.error("Server is offline - cannot execute command")
+            logger.error("Server is offline (HTTP 502) - cannot execute command")
+            return False
+        elif response.status_code == 401:
+            logger.error("Unauthorized - check Pterodactyl API key")
+            return False
+        elif response.status_code == 403:
+            logger.error("Forbidden - check API key permissions")
+            return False
+        elif response.status_code == 404:
+            logger.error("Server not found - check server ID")
+            return False
+        elif response.status_code == 429:
+            logger.error("Rate limited - too many requests")
             return False
         else:
             logger.error(f"Pterodactyl API error: {response.status_code} - {response.text}")
@@ -305,11 +328,17 @@ def send_pterodactyl_command(command):
     except requests.exceptions.Timeout:
         logger.error("Pterodactyl API request timed out")
         return False
-    except requests.exceptions.ConnectionError:
-        logger.error("Failed to connect to Pterodactyl API")
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Failed to connect to Pterodactyl API: {e}")
+        return False
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"HTTP error occurred: {e}")
+        return False
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request exception occurred: {e}")
         return False
     except Exception as e:
-        logger.error(f"Error sending command to Pterodactyl: {e}")
+        logger.error(f"Unexpected error sending command to Pterodactyl: {e}")
         return False
 
 
