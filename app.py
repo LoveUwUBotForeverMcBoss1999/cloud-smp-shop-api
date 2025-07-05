@@ -30,11 +30,33 @@ points_cache = {}
 cache_timestamp = 0
 CACHE_DURATION = 300  # 5 minutes
 
+# Mock user data for testing
+MOCK_USER_DATA = {
+    "1237079597124812862": {
+        "username": "ItzMcBoss",
+        "points": 1500,
+        "messages": 250,
+        "last_updated": datetime.now().isoformat()
+    },
+    "123456789": {
+        "username": "TestUser",
+        "points": 1200,
+        "messages": 450,
+        "last_updated": datetime.now().isoformat()
+    },
+    "987654321": {
+        "username": "PoorUser",
+        "points": 50,
+        "messages": 25,
+        "last_updated": datetime.now().isoformat()
+    }
+}
 
 def get_discord_headers():
     """Get Discord API headers"""
     if not DISCORD_TOKEN:
-        raise ValueError("Discord token not configured")
+        logger.warning("Discord token not configured")
+        return None
 
     return {
         'Authorization': f'Bot {DISCORD_TOKEN}',
@@ -51,6 +73,10 @@ def get_user_data_from_discord():
     for attempt in range(max_retries):
         try:
             headers = get_discord_headers()
+            if not headers:
+                logger.info("Discord token not configured, using mock data")
+                return MOCK_USER_DATA
+            
             url = f"{DISCORD_API_BASE}/channels/{CHANNEL_ID}/messages"
 
             response = requests.get(url, headers=headers, params={'limit': 100}, timeout=10)
@@ -63,14 +89,14 @@ def get_user_data_from_discord():
 
             if response.status_code == 401:
                 logger.error("Discord API unauthorized - check bot token")
-                return {}
+                return MOCK_USER_DATA
 
             if response.status_code != 200:
                 logger.error(f"Discord API error: {response.status_code} - {response.text}")
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay * (2 ** attempt))
                     continue
-                return {}
+                return MOCK_USER_DATA
 
             messages = response.json()
 
@@ -88,25 +114,29 @@ def get_user_data_from_discord():
                                 logger.error(f"Error downloading/parsing points file: {e}")
                                 continue
 
-            return {}
+            logger.info("No cloud_points.txt found, using mock data")
+            return MOCK_USER_DATA
 
         except requests.RequestException as e:
             logger.error(f"Request error (attempt {attempt + 1}): {e}")
             if attempt < max_retries - 1:
                 time.sleep(retry_delay * (2 ** attempt))
                 continue
-            return {}
+            return MOCK_USER_DATA
         except Exception as e:
             logger.error(f"Unexpected error fetching Discord data: {e}")
-            return {}
+            return MOCK_USER_DATA
 
-    return {}
+    return MOCK_USER_DATA
 
 
 def get_discord_user_info(user_id):
     """Get Discord user info via API with error handling"""
     try:
         headers = get_discord_headers()
+        if not headers:
+            return None
+            
         url = f"{DISCORD_API_BASE}/users/{user_id}"
 
         response = requests.get(url, headers=headers, timeout=10)
@@ -128,6 +158,9 @@ def send_discord_dm(user_id, embed_data):
     """Send DM to Discord user with improved error handling"""
     try:
         headers = get_discord_headers()
+        if not headers:
+            logger.warning("Discord token not configured, cannot send DM")
+            return False
 
         # Create DM channel
         dm_url = f"{DISCORD_API_BASE}/users/@me/channels"
@@ -177,12 +210,39 @@ def load_items():
                     logger.warning(f"Item {item_id} missing required fields")
             return items
     except FileNotFoundError:
-        logger.error("items.json file not found")
+        logger.info("items.json file not found, using default items")
         # Return default items if file doesn't exist
         return {
-            "1": {"item-name": "Golden Apple", "item-price": 100, "item-icon": "🍎", "item-cmd": "give {ingame-name} golden_apple 1"},
-            "2": {"item-name": "Diamond Sword", "item-price": 250, "item-icon": "⚔️", "item-cmd": "give {ingame-name} diamond_sword 1"},
-            "3": {"item-name": "Enchanted Diamond Pickaxe", "item-price": 500, "item-icon": "⛏️", "item-cmd": "give {ingame-name} diamond_pickaxe 1"}
+            "1": {"item-name": "Golden Apple", "item-price": 100, "item-icon": "🍎",
+                  "item-cmd": "give {ingame-name} golden_apple 1"},
+            "2": {"item-name": "Diamond Sword", "item-price": 250, "item-icon": "⚔️",
+                  "item-cmd": "give {ingame-name} diamond_sword 1"},
+            "3": {"item-name": "Enchanted Diamond Pickaxe", "item-price": 500, "item-icon": "⛏️",
+                  "item-cmd": "give {ingame-name} diamond_pickaxe 1"},
+            "4": {"item-name": "Netherite Helmet", "item-price": 750, "item-icon": "🪖",
+                  "item-cmd": "give {ingame-name} netherite_helmet 1"},
+            "5": {"item-name": "Ender Chest", "item-price": 200, "item-icon": "📦",
+                  "item-cmd": "give {ingame-name} ender_chest 1"},
+            "6": {"item-name": "Shulker Box", "item-price": 300, "item-icon": "🎁",
+                  "item-cmd": "give {ingame-name} shulker_box 1"},
+            "7": {"item-name": "Elytra", "item-price": 1000, "item-icon": "🪶",
+                  "item-cmd": "give {ingame-name} elytra 1"},
+            "8": {"item-name": "Beacon", "item-price": 800, "item-icon": "🔥",
+                  "item-cmd": "give {ingame-name} beacon 1"},
+            "9": {"item-name": "Totem of Undying", "item-price": 600, "item-icon": "🛡️",
+                  "item-cmd": "give {ingame-name} totem_of_undying 1"},
+            "10": {"item-name": "Dragon Egg", "item-price": 1500, "item-icon": "🥚",
+                   "item-cmd": "give {ingame-name} dragon_egg 1"},
+            "11": {"item-name": "Stack of Diamonds", "item-price": 400, "item-icon": "💎",
+                   "item-cmd": "give {ingame-name} diamond 64"},
+            "12": {"item-name": "Stack of Emeralds", "item-price": 350, "item-icon": "💚",
+                   "item-cmd": "give {ingame-name} emerald 64"},
+            "13": {"item-name": "Mending Book", "item-price": 450, "item-icon": "📚",
+                   "item-cmd": "give {ingame-name} enchanted_book{StoredEnchantments:[{id:mending,lvl:1}]} 1"},
+            "14": {"item-name": "Trident", "item-price": 550, "item-icon": "🔱",
+                   "item-cmd": "give {ingame-name} trident 1"},
+            "15": {"item-name": "Notch Apple", "item-price": 900, "item-icon": "🌟",
+                   "item-cmd": "give {ingame-name} enchanted_golden_apple 1"}
         }
     except json.JSONDecodeError as e:
         logger.error(f"Error parsing items.json: {e}")
@@ -208,32 +268,15 @@ def get_user_from_channel():
             logger.info(f"Updated user cache with {len(discord_data)} users")
             return discord_data
 
-        # If Discord fetch fails, try to use fallback data or return empty
-        logger.warning("Failed to fetch from Discord, using fallback data")
-        
-        # Fallback mock data for testing
-        fallback_data = {
-            "1237079597124812862": {
-                "username": "ItzMcBoss",
-                "points": 1500,
-                "messages": 250,
-                "last_updated": datetime.now().isoformat()
-            },
-            "123456789": {
-                "username": "TestUser",
-                "points": 1200,
-                "messages": 450,
-                "last_updated": datetime.now().isoformat()
-            }
-        }
-        
-        points_cache = fallback_data
+        # If Discord fetch fails, use mock data
+        logger.info("Using mock user data")
+        points_cache = MOCK_USER_DATA
         cache_timestamp = current_time
-        return fallback_data
+        return MOCK_USER_DATA
 
     except Exception as e:
         logger.error(f"Error getting user data: {e}")
-        return points_cache if points_cache else {}
+        return points_cache if points_cache else MOCK_USER_DATA
 
 
 def generate_otp():
@@ -243,11 +286,11 @@ def generate_otp():
 
 def send_pterodactyl_command(command):
     """Send command to Pterodactyl server with error handling"""
-    if not PTERODACTYL_API_KEY:
-        logger.warning("Pterodactyl API key not configured - simulating command execution")
-        return True  # Return True for testing when API key is not configured
-
     try:
+        if not PTERODACTYL_API_KEY:
+            logger.info(f"Pterodactyl API key not configured - simulating command execution: {command}")
+            return True  # Return True for testing when API key is not configured
+
         url = f"{PTERODACTYL_BASE_URL}/{PTERODACTYL_SERVER_ID}/command"
         headers = {
             'Accept': 'application/json',
@@ -256,15 +299,28 @@ def send_pterodactyl_command(command):
         }
         data = {'command': command}
 
-        response = requests.post(url, headers=headers, json=data, timeout=10)
+        logger.info(f"Sending command to Pterodactyl: {command}")
+        response = requests.post(url, headers=headers, json=data, timeout=15)
 
         if response.status_code == 204:
             logger.info(f"Successfully executed command: {command}")
             return True
+        elif response.status_code == 401:
+            logger.error("Pterodactyl API unauthorized - check API key")
+            return False
+        elif response.status_code == 404:
+            logger.error(f"Pterodactyl server not found: {PTERODACTYL_SERVER_ID}")
+            return False
         else:
             logger.error(f"Pterodactyl API error: {response.status_code} - {response.text}")
             return False
 
+    except requests.exceptions.Timeout:
+        logger.error("Pterodactyl API request timed out")
+        return False
+    except requests.exceptions.ConnectionError:
+        logger.error("Could not connect to Pterodactyl API")
+        return False
     except Exception as e:
         logger.error(f"Error sending command to Pterodactyl: {e}")
         return False
@@ -317,7 +373,8 @@ def health_check():
         "pterodactyl_configured": bool(PTERODACTYL_API_KEY),
         "active_otps": len(active_otps),
         "cached_users": len(points_cache),
-        "cache_age_seconds": int(time.time() - cache_timestamp) if cache_timestamp > 0 else 0
+        "cache_age_seconds": int(time.time() - cache_timestamp) if cache_timestamp > 0 else 0,
+        "mock_users": list(MOCK_USER_DATA.keys())
     }
     return jsonify(status)
 
@@ -389,6 +446,8 @@ def send_otp_dm(user_id):
             "created_at": datetime.now()
         }
 
+        logger.info(f"Generated OTP {otp} for user {user_id}")
+
         # Create embed for DM
         embed_data = {
             "title": "☁️ Shop Verification Code",
@@ -431,6 +490,8 @@ def send_otp_dm(user_id):
 def purchase_item(user_id, otp, item_number, ingame_name):
     """Purchase item using OTP verification"""
     try:
+        logger.info(f"Purchase request: user={user_id}, otp={otp}, item={item_number}, ingame={ingame_name}")
+        
         # Validate inputs
         if not user_id.isdigit() or len(user_id) < 10:
             return jsonify({"error": "Invalid user ID format"}), 400
@@ -447,18 +508,22 @@ def purchase_item(user_id, otp, item_number, ingame_name):
         # Verify OTP - use string key for consistency
         user_id_str = str(user_id)
         if user_id_str not in active_otps:
+            logger.warning(f"No OTP found for user {user_id}")
             return jsonify({"error": "No OTP found or OTP expired"}), 400
 
         otp_data = active_otps[user_id_str]
 
         if otp_data["used"]:
+            logger.warning(f"OTP already used for user {user_id}")
             return jsonify({"error": "OTP already used"}), 400
 
         if datetime.now() > otp_data["expires_at"]:
             del active_otps[user_id_str]
+            logger.warning(f"OTP expired for user {user_id}")
             return jsonify({"error": "OTP expired"}), 400
 
         if otp_data["otp"] != otp:
+            logger.warning(f"Invalid OTP for user {user_id}: expected {otp_data['otp']}, got {otp}")
             return jsonify({"error": "Invalid OTP"}), 400
 
         # Load items
@@ -470,6 +535,7 @@ def purchase_item(user_id, otp, item_number, ingame_name):
             return jsonify({"error": "Item not found"}), 404
 
         item = items[item_number]
+        logger.info(f"Item found: {item}")
 
         # Check user points
         all_user_data = get_user_from_channel()
@@ -479,6 +545,7 @@ def purchase_item(user_id, otp, item_number, ingame_name):
             return jsonify({"error": "User not found"}), 404
 
         user_points = user_data.get("points", 0)
+        logger.info(f"User {user_id} has {user_points} points")
 
         # Safely convert item price to int
         try:
@@ -488,10 +555,12 @@ def purchase_item(user_id, otp, item_number, ingame_name):
             return jsonify({"error": "Invalid item price"}), 500
 
         if user_points < item_price:
+            logger.warning(f"User {user_id} has insufficient points: {user_points} < {item_price}")
             return jsonify({"error": "Insufficient cloud points"}), 400
 
         # Execute item command
         command = item["item-cmd"].replace("{ingame-name}", ingame_name)
+        logger.info(f"Executing command: {command}")
 
         # Try to send command to Pterodactyl
         command_success = send_pterodactyl_command(command)
@@ -508,16 +577,18 @@ def purchase_item(user_id, otp, item_number, ingame_name):
                 "item": item["item-name"],
                 "price": item_price,
                 "remaining_points": user_points - item_price,
-                "command_executed": command,
-                "note": "Points will be deducted by the bot system"
+                "command_executed": command
             }
 
             # Add testing note if Pterodactyl isn't configured
             if not PTERODACTYL_API_KEY:
                 response_data["note"] = "Command simulated (Pterodactyl not configured). Points will be deducted by the bot system."
+            else:
+                response_data["note"] = "Points will be deducted by the bot system"
 
             return jsonify(response_data)
         else:
+            logger.error(f"Failed to execute command: {command}")
             return jsonify({"error": "Failed to execute item command on server"}), 500
 
     except Exception as e:
@@ -599,6 +670,13 @@ def get_active_otps():
         }
 
     return jsonify(otp_info)
+
+
+@app.route('/api/admin/users')
+def get_all_users():
+    """Get all users (for debugging)"""
+    all_user_data = get_user_from_channel()
+    return jsonify(all_user_data)
 
 
 @app.errorhandler(404)
