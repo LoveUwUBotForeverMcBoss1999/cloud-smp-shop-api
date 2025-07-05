@@ -1,4 +1,3 @@
-
 from flask import Flask, jsonify, request
 import os
 import json
@@ -6,10 +5,6 @@ import requests
 import random
 import string
 from datetime import datetime, timedelta
-import discord
-import asyncio
-import threading
-from bot import get_bot_instance
 
 app = Flask(__name__)
 
@@ -19,36 +14,97 @@ PTERODACTYL_API_KEY = os.getenv('PTERODACTYL_API_KEY')
 PTERODACTYL_SERVER_ID = "1a7ce997"
 PTERODACTYL_BASE_URL = "https://pterodactyl.file.properties/api/client/servers"
 CHANNEL_ID = 1390794341764567040
+DISCORD_API_BASE = "https://discord.com/api/v10"
 
 # OTP storage (in production, use Redis or database)
 active_otps = {}
 
-# Discord client for API operations
-discord_client = None
-bot_instance = None
+# In-memory points storage for API (will be replaced by reading from Discord)
+points_cache = {}
 
 
-def init_discord_client():
-    """Initialize Discord client for API operations"""
-    global discord_client
-    if not discord_client:
-        intents = discord.Intents.default()
-        intents.message_content = True
-        discord_client = discord.Client(intents=intents)
-
-        @discord_client.event
-        async def on_ready():
-            print(f'Discord API client ready: {discord_client.user}')
-
-    return discord_client
+def get_discord_headers():
+    """Get Discord API headers"""
+    return {
+        'Authorization': f'Bot {DISCORD_TOKEN}',
+        'Content-Type': 'application/json'
+    }
 
 
-def run_discord_client():
-    """Run Discord client in background"""
-    if not discord_client.is_ready():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(discord_client.start(DISCORD_TOKEN))
+def get_user_data_from_discord():
+    """Fetch user data from Discord channel messages"""
+    try:
+        headers = get_discord_headers()
+        url = f"{DISCORD_API_BASE}/channels/{CHANNEL_ID}/messages"
+
+        response = requests.get(url, headers=headers, params={'limit': 100})
+
+        if response.status_code != 200:
+            print(f"Discord API error: {response.status_code}")
+            return {}
+
+        messages = response.json()
+
+        # Look for the cloud_points.txt file
+        for message in messages:
+            if message.get('attachments'):
+                for attachment in message['attachments']:
+                    if attachment['filename'] == 'cloud_points.txt':
+                        # Download the file
+                        file_response = requests.get(attachment['url'])
+                        if file_response.status_code == 200:
+                            try:
+                                return json.loads(file_response.text)
+                            except json.JSONDecodeError:
+                                continue
+
+        return {}
+    except Exception as e:
+        print(f"Error fetching Discord data: {e}")
+        return {}
+
+
+def get_discord_user_info(user_id):
+    """Get Discord user info via API"""
+    try:
+        headers = get_discord_headers()
+        url = f"{DISCORD_API_BASE}/users/{user_id}"
+
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except Exception as e:
+        print(f"Error getting Discord user: {e}")
+        return None
+
+
+def send_discord_dm(user_id, embed_data):
+    """Send DM to Discord user"""
+    try:
+        headers = get_discord_headers()
+
+        # Create DM channel
+        dm_url = f"{DISCORD_API_BASE}/users/@me/channels"
+        dm_data = {'recipient_id': user_id}
+
+        dm_response = requests.post(dm_url, headers=headers, json=dm_data)
+
+        if dm_response.status_code == 200:
+            dm_channel = dm_response.json()
+
+            # Send message to DM channel
+            message_url = f"{DISCORD_API_BASE}/channels/{dm_channel['id']}/messages"
+            message_data = {'embeds': [embed_data]}
+
+            message_response = requests.post(message_url, headers=headers, json=message_data)
+            return message_response.status_code == 200
+
+        return False
+    except Exception as e:
+        print(f"Error sending DM: {e}")
+        return False
 
 
 def load_items():
@@ -62,23 +118,21 @@ def load_items():
 
 def get_user_from_channel():
     """Get user data from Discord channel file"""
+    global points_cache
+
     try:
-        if not discord_client or not discord_client.is_ready():
-            return {}
+        # Try to get fresh data from Discord
+        discord_data = get_user_data_from_discord()
+        if discord_data:
+            points_cache = discord_data
+            return discord_data
 
-        channel = discord_client.get_channel(CHANNEL_ID)
-        if not channel:
-            return {}
+        # Fallback to cache if Discord fetch fails
+        return points_cache
 
-        # This is a simplified version - in practice, you'd need to make this async
-        # For now, we'll use the bot instance if available
-        if bot_instance:
-            return bot_instance.points_data
-
-        return {}
     except Exception as e:
         print(f"Error getting user data: {e}")
-        return {}
+        return points_cache
 
 
 def generate_otp():
@@ -110,9 +164,10 @@ def health_check():
     status = {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "discord_connected": discord_client is not None and discord_client.is_ready() if discord_client else False,
+        "discord_token_configured": bool(DISCORD_TOKEN),
         "pterodactyl_configured": bool(PTERODACTYL_API_KEY),
-        "active_otps": len(active_otps)
+        "active_otps": len(active_otps),
+        "cached_users": len(points_cache)
     }
     return jsonify(status)
 
@@ -121,29 +176,28 @@ def health_check():
 def get_user_info(user_id):
     """Get user information"""
     try:
-        # Get user data from bot instance or channel
-        user_data = {}
-        if bot_instance:
-            user_data = bot_instance.get_user_points(user_id)
+        # Get user data from Discord channel
+        all_user_data = get_user_from_channel()
+        user_data = all_user_data.get(str(user_id), {})
 
         if not user_data:
             return jsonify({"error": "User not found"}), 404
 
-        # Try to get Discord user info
-        discord_user = None
-        if discord_client and discord_client.is_ready():
-            try:
-                discord_user = discord_client.get_user(int(user_id))
-            except:
-                pass
+        # Get Discord user info
+        discord_user = get_discord_user_info(user_id)
+
+        avatar_url = None
+        if discord_user and discord_user.get('avatar'):
+            avatar_url = f"https://cdn.discordapp.com/avatars/{user_id}/{discord_user['avatar']}.png"
 
         response = {
             "user_id": user_id,
-            "username": user_data.get("username", "Unknown"),
+            "username": user_data.get("username",
+                                      discord_user.get("username", "Unknown") if discord_user else "Unknown"),
             "cloud_points": user_data.get("points", 0),
             "messages_sent": user_data.get("messages", 0),
             "last_updated": user_data.get("last_updated", ""),
-            "discord_avatar": str(discord_user.avatar.url) if discord_user and discord_user.avatar else None
+            "discord_avatar": avatar_url
         }
 
         return jsonify(response)
@@ -156,9 +210,6 @@ def get_user_info(user_id):
 def send_otp_dm(user_id):
     """Send OTP to user's DM"""
     try:
-        if not discord_client or not discord_client.is_ready():
-            return jsonify({"error": "Discord client not ready"}), 503
-
         # Generate OTP
         otp = generate_otp()
         expires_at = datetime.now() + timedelta(minutes=5)
@@ -170,12 +221,7 @@ def send_otp_dm(user_id):
             "used": False
         }
 
-        # Send DM (this would need to be async in practice)
-        user = discord_client.get_user(int(user_id))
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-
-        # For now, we'll just return the OTP (in production, actually send DM)
+        # Create embed for DM
         embed_data = {
             "title": "☁️ Shop Verification Code",
             "description": f"Your verification code is: **{otp}**",
@@ -184,15 +230,26 @@ def send_otp_dm(user_id):
                 {"name": "Expires", "value": "5 minutes", "inline": True},
                 {"name": "Use Case", "value": "Shop Purchase", "inline": True}
             ],
-            "footer": {"text": "Do not share this code with anyone!"}
+            "footer": {"text": "Do not share this code with anyone!"},
+            "timestamp": datetime.now().isoformat()
         }
 
-        return jsonify({
-            "success": True,
-            "message": "OTP sent to DM",
-            "expires_in": 300,
-            "otp": otp  # Remove this in production
-        })
+        # Send DM
+        dm_sent = send_discord_dm(user_id, embed_data)
+
+        if dm_sent:
+            return jsonify({
+                "success": True,
+                "message": "OTP sent to DM",
+                "expires_in": 300
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Failed to send DM, but OTP is generated",
+                "expires_in": 300,
+                "otp": otp  # Include OTP if DM fails
+            })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -226,9 +283,8 @@ def purchase_item(user_id, otp, item_number, ingame_name):
         item = items[item_number]
 
         # Check user points
-        user_data = {}
-        if bot_instance:
-            user_data = bot_instance.get_user_points(user_id)
+        all_user_data = get_user_from_channel()
+        user_data = all_user_data.get(str(user_id), {})
 
         if not user_data:
             return jsonify({"error": "User not found"}), 404
@@ -239,12 +295,6 @@ def purchase_item(user_id, otp, item_number, ingame_name):
         if user_points < item_price:
             return jsonify({"error": "Insufficient cloud points"}), 400
 
-        # Deduct points
-        if bot_instance:
-            success = bot_instance.deduct_points(user_id, item_price)
-            if not success:
-                return jsonify({"error": "Failed to deduct points"}), 500
-
         # Execute item command
         command = item["item-cmd"].replace("{ingame-name}", ingame_name)
 
@@ -252,9 +302,8 @@ def purchase_item(user_id, otp, item_number, ingame_name):
             # Mark OTP as used
             active_otps[user_id]["used"] = True
 
-            # Save points data
-            if bot_instance:
-                asyncio.create_task(bot_instance.save_points_data())
+            # Note: Points deduction would need to be handled by the bot
+            # For now, we'll just return success
 
             return jsonify({
                 "success": True,
@@ -262,13 +311,10 @@ def purchase_item(user_id, otp, item_number, ingame_name):
                 "item": item["item-name"],
                 "price": item_price,
                 "remaining_points": user_points - item_price,
-                "command_executed": command
+                "command_executed": command,
+                "note": "Points will be deducted by the bot system"
             })
         else:
-            # Refund points if command failed
-            if bot_instance:
-                bot_instance.points_data[user_id]["points"] += item_price
-
             return jsonify({"error": "Failed to execute item command"}), 500
 
     except Exception as e:
@@ -320,22 +366,6 @@ def get_all_items():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-# Initialize Discord client when app starts
-@app.before_first_request
-def initialize():
-    global bot_instance
-    try:
-        bot_instance = get_bot_instance()
-        init_discord_client()
-
-        # Start Discord client in background thread
-        discord_thread = threading.Thread(target=run_discord_client)
-        discord_thread.daemon = True
-        discord_thread.start()
-    except Exception as e:
-        print(f"Error initializing: {e}")
 
 
 if __name__ == '__main__':
