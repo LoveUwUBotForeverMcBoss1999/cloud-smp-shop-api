@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 # Configuration
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 PTERODACTYL_API_KEY = os.getenv('PTERODACTYL_API_KEY')
-PTERODACTYL_SERVER_ID = "1a7ce997"
-PTERODACTYL_BASE_URL = "https://pterodactyl.file.properties/api/client/servers"
+PTERODACTYL_SERVER_ID = "13ded370"  # FIXED: Updated to your actual server ID
+PTERODACTYL_BASE_URL = "https://panel2.mcboss.top/api/client/servers"  # FIXED: Updated to your panel URL
 CHANNEL_ID = 1390794341764567040
 DISCORD_API_BASE = "https://discord.com/api/v10"
 
@@ -269,74 +269,86 @@ def generate_otp():
 
 
 def send_pterodactyl_command(command):
-    """Send command to Pterodactyl server - FIXED with better error handling"""
+    """Send command to Pterodactyl server - COMPLETELY REWRITTEN"""
     if not PTERODACTYL_API_KEY:
-        logger.warning("Pterodactyl API key not configured - simulating command execution")
-        return True  # Return True for testing when API key is not configured
+        logger.error("Pterodactyl API key not configured!")
+        return False
 
     try:
         # Construct the URL properly
         url = f"{PTERODACTYL_BASE_URL}/{PTERODACTYL_SERVER_ID}/command"
-        
+
         # Headers with proper authentication
         headers = {
             'Authorization': f'Bearer {PTERODACTYL_API_KEY}',
             'Accept': 'application/json',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'User-Agent': 'CloudSMP-Shop-Bot/1.0'
         }
-        
+
         # Command payload
         payload = {
             'command': command
         }
 
-        logger.info(f"Sending command to Pterodactyl: {command}")
+        logger.info(f"Sending command to Pterodactyl")
         logger.info(f"URL: {url}")
-        
+        logger.info(f"Command: {command}")
+        logger.info(f"Headers: {headers}")
+        logger.info(f"Payload: {payload}")
+
         # Send the request with extended timeout
         response = requests.post(url, headers=headers, json=payload, timeout=30)
-        
+
         logger.info(f"Pterodactyl response status: {response.status_code}")
-        
+        logger.info(f"Pterodactyl response text: {response.text}")
+        logger.info(f"Pterodactyl response headers: {dict(response.headers)}")
+
         # Handle different response codes
         if response.status_code == 204:
             # Success - command executed
-            logger.info(f"Successfully executed command: {command}")
+            logger.info(f"✅ Successfully executed command: {command}")
             return True
         elif response.status_code == 200:
             # Some APIs return 200 instead of 204
-            logger.info(f"Command executed successfully: {command}")
+            logger.info(f"✅ Command executed successfully: {command}")
             return True
-        elif response.status_code == 502:
-            logger.warning("Server might be offline (502) - but allowing purchase to continue")
-            return True  # Allow purchase even if server is offline
         elif response.status_code == 401:
-            logger.error("Unauthorized - check Pterodactyl API key")
+            logger.error("❌ Unauthorized - check Pterodactyl API key")
+            logger.error(f"API Key being used: {PTERODACTYL_API_KEY[:10]}...")
             return False
         elif response.status_code == 403:
-            logger.error("Forbidden - insufficient permissions")
+            logger.error("❌ Forbidden - insufficient permissions")
             return False
         elif response.status_code == 404:
-            logger.error("Server not found - check server ID")
+            logger.error("❌ Server not found - check server ID")
+            logger.error(f"Server ID being used: {PTERODACTYL_SERVER_ID}")
+            logger.error(f"Full URL: {url}")
+            return False
+        elif response.status_code == 422:
+            logger.error("❌ Validation error - check command format")
+            logger.error(f"Command: {command}")
+            return False
+        elif response.status_code == 502:
+            logger.error("❌ Server might be offline (502)")
             return False
         elif response.status_code == 429:
-            logger.warning("Rate limited - but allowing purchase")
-            return True  # Allow purchase even if rate limited
+            logger.warning("⚠️ Rate limited")
+            return False
         else:
-            logger.error(f"Pterodactyl API error: {response.status_code} - {response.text}")
-            # For unknown errors, allow the purchase to continue
-            # The bot will handle the actual point deduction
-            return True
+            logger.error(f"❌ Pterodactyl API error: {response.status_code}")
+            logger.error(f"Response: {response.text}")
+            return False
 
     except requests.exceptions.Timeout:
-        logger.warning("Pterodactyl request timed out - allowing purchase to continue")
-        return True
-    except requests.exceptions.ConnectionError:
-        logger.warning("Connection error to Pterodactyl - allowing purchase to continue")
-        return True
+        logger.error("❌ Pterodactyl request timed out")
+        return False
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"❌ Connection error to Pterodactyl: {e}")
+        return False
     except Exception as e:
-        logger.warning(f"Pterodactyl error: {e} - allowing purchase to continue")
-        return True
+        logger.error(f"❌ Pterodactyl error: {e}")
+        return False
 
 
 def cleanup_expired_otps():
@@ -384,6 +396,8 @@ def health_check():
         "timestamp": datetime.now().isoformat(),
         "discord_token_configured": bool(DISCORD_TOKEN),
         "pterodactyl_configured": bool(PTERODACTYL_API_KEY),
+        "pterodactyl_server_id": PTERODACTYL_SERVER_ID,
+        "pterodactyl_base_url": PTERODACTYL_BASE_URL,
         "active_otps": len(active_otps),
         "cached_users": len(points_cache),
         "cache_age_seconds": int(time.time() - cache_timestamp) if cache_timestamp > 0 else 0
@@ -498,21 +512,21 @@ def send_otp_dm(user_id):
 
 @app.route('/api/shop/<user_id>/<otp>/item/<item_number>/<ingame_name>', methods=['POST'])
 def purchase_item(user_id, otp, item_number, ingame_name):
-    """Purchase item using OTP verification - FIXED VERSION"""
+    """Purchase item using OTP verification - COMPLETELY REWRITTEN"""
     try:
-        logger.info(f"Purchase request: user_id={user_id}, otp={otp}, item={item_number}, ingame={ingame_name}")
+        logger.info(f"🛒 Purchase request: user_id={user_id}, otp={otp}, item={item_number}, ingame={ingame_name}")
 
         # Validate inputs
         if not user_id.isdigit() or len(user_id) < 10:
-            logger.error(f"Invalid user ID format: {user_id}")
+            logger.error(f"❌ Invalid user ID format: {user_id}")
             return jsonify({"error": "Invalid user ID format"}), 400
 
         if not otp.isdigit() or len(otp) != 6:
-            logger.error(f"Invalid OTP format: {otp}")
+            logger.error(f"❌ Invalid OTP format: {otp}")
             return jsonify({"error": "Invalid OTP format"}), 400
 
         if not ingame_name or len(ingame_name) > 16:
-            logger.error(f"Invalid in-game name: {ingame_name}")
+            logger.error(f"❌ Invalid in-game name: {ingame_name}")
             return jsonify({"error": "Invalid in-game name"}), 400
 
         # Clean up expired OTPs
@@ -520,94 +534,93 @@ def purchase_item(user_id, otp, item_number, ingame_name):
 
         # Verify OTP
         user_id_str = str(user_id)
-        logger.info(f"Checking OTP for user {user_id_str}")
+        logger.info(f"🔐 Checking OTP for user {user_id_str}")
 
         if user_id_str not in active_otps:
-            logger.error(f"No OTP found for user {user_id_str}")
+            logger.error(f"❌ No OTP found for user {user_id_str}")
             return jsonify({"error": "No OTP found or OTP expired"}), 400
 
         otp_data = active_otps[user_id_str]
 
         if otp_data["used"]:
-            logger.error(f"OTP already used for user {user_id_str}")
+            logger.error(f"❌ OTP already used for user {user_id_str}")
             return jsonify({"error": "OTP already used"}), 400
 
         if datetime.now() > otp_data["expires_at"]:
-            logger.error(f"OTP expired for user {user_id_str}")
+            logger.error(f"❌ OTP expired for user {user_id_str}")
             del active_otps[user_id_str]
             return jsonify({"error": "OTP expired"}), 400
 
         if otp_data["otp"] != otp:
-            logger.error(f"Invalid OTP for user {user_id_str}")
+            logger.error(f"❌ Invalid OTP for user {user_id_str}")
             return jsonify({"error": "Invalid OTP"}), 400
+
+        logger.info(f"✅ OTP verified for user {user_id_str}")
 
         # Load items
         items = load_items()
         if not items:
-            logger.error("No items available")
+            logger.error("❌ No items available")
             return jsonify({"error": "Shop items not available"}), 503
 
         if item_number not in items:
-            logger.error(f"Item {item_number} not found")
+            logger.error(f"❌ Item {item_number} not found")
             return jsonify({"error": "Item not found"}), 404
 
         item = items[item_number]
-        logger.info(f"Item found: {item}")
+        logger.info(f"📦 Item found: {item}")
 
         # Check user points
         all_user_data = get_user_from_channel()
         user_data = all_user_data.get(user_id_str, {})
 
         if not user_data:
-            logger.error(f"User {user_id_str} not found in user data")
+            logger.error(f"❌ User {user_id_str} not found in user data")
             return jsonify({"error": "User not found"}), 404
 
         user_points = user_data.get("points", 0)
-        logger.info(f"User {user_id_str} has {user_points} points")
+        logger.info(f"💰 User {user_id_str} has {user_points} points")
 
         # Get item price
         try:
             item_price = int(item["item-price"])
         except (ValueError, KeyError):
-            logger.error(f"Invalid item price for item {item_number}")
+            logger.error(f"❌ Invalid item price for item {item_number}")
             return jsonify({"error": "Invalid item price"}), 500
 
         if user_points < item_price:
-            logger.error(f"User {user_id_str} has insufficient points")
+            logger.error(f"❌ User {user_id_str} has insufficient points ({user_points} < {item_price})")
             return jsonify({"error": "Insufficient cloud points"}), 400
 
         # Execute item command
         command = item["item-cmd"].replace("{ingame-name}", ingame_name)
-        logger.info(f"Executing command: {command}")
+        logger.info(f"🎮 Executing command: {command}")
 
-        # Try to send command (this will now be more lenient)
+        # Send command to Pterodactyl
         command_success = send_pterodactyl_command(command)
 
-        # Mark OTP as used regardless of Pterodactyl success
-        # The Discord bot will handle the actual point deduction
+        if not command_success:
+            logger.error(f"❌ Failed to execute command on Pterodactyl")
+            return jsonify({"error": "Failed to execute command on server"}), 500
+
+        # Mark OTP as used only if command succeeded
         active_otps[user_id_str]["used"] = True
-        logger.info(f"OTP marked as used for user {user_id_str}")
+        logger.info(f"✅ OTP marked as used for user {user_id_str}")
 
-        logger.info(f"Purchase completed: User {user_id} ({ingame_name}) bought {item['item-name']} for {item_price} points")
+        logger.info(f"🎉 Purchase completed successfully: User {user_id} ({ingame_name}) bought {item['item-name']} for {item_price} points")
 
-        # Always return success - let the Discord bot handle the rest
-        response_data = {
+        return jsonify({
             "success": True,
             "message": "Purchase completed successfully",
             "item": item["item-name"],
             "price": item_price,
             "remaining_points": user_points - item_price,
             "command_executed": command,
-            "note": "Points will be deducted by the Discord bot system"
-        }
-
-        if not command_success:
-            response_data["warning"] = "Command execution uncertain, but purchase recorded"
-
-        return jsonify(response_data)
+            "pterodactyl_success": True
+        })
 
     except Exception as e:
-        logger.error(f"Error purchasing item for {user_id}: {e}")
+        logger.error(f"❌ Error purchasing item for {user_id}: {e}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
@@ -687,6 +700,24 @@ def get_active_otps():
         }
 
     return jsonify(otp_info)
+
+
+@app.route('/api/debug/pterodactyl-test')
+def test_pterodactyl():
+    """Test Pterodactyl connection"""
+    try:
+        command = "say Test command from API"
+        success = send_pterodactyl_command(command)
+        
+        return jsonify({
+            "pterodactyl_configured": bool(PTERODACTYL_API_KEY),
+            "server_id": PTERODACTYL_SERVER_ID,
+            "base_url": PTERODACTYL_BASE_URL,
+            "test_command": command,
+            "success": success
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.errorhandler(404)
