@@ -3,7 +3,7 @@
     "item-name": "Golden Apple",
     "item-price": "100",
     "item-cmd": "give {ingame-name} golden_apple 1",
-    "item-icon": "https://static.wikia.nocookie.net/minecraft_gamepedia/images/5/54/Golden_Apple_JE2_BE2.png/revision/latest/thumbnail/width/360/height/360?cb=20200521041809"
+    "item-icon": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQFfUnCIPVTtIm4RpwIrOehAhXxNXeuKY2TZQ&s"
   },
   "2": {
     "item-name": "Diamond Sword",
