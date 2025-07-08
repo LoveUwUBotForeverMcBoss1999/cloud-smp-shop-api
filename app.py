@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, redirect, send_file
 import os
 import json
 import requests
@@ -7,6 +7,8 @@ import string
 from datetime import datetime, timedelta
 import time
 import logging
+import tempfile
+from urllib.parse import urlparse
 
 app = Flask(__name__)
 
@@ -29,6 +31,22 @@ active_otps = {}
 points_cache = {}
 cache_timestamp = 0
 CACHE_DURATION = 60  # 1 minute instead of 5 minutes
+
+
+
+# Media channel configuration
+MEDIA_CHANNEL_ID = 1390701938999558318  # The channel ID you specified
+
+# Media type mappings
+IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.svg'}
+VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v'}
+
+# Cache for media files
+media_cache = {}
+media_cache_timestamp = 0
+MEDIA_CACHE_DURATION = 300  # 5 minutes cache for media
+
+
 
 
 def get_discord_headers():
@@ -750,6 +768,368 @@ def clear_cache():
     points_cache = {}
     cache_timestamp = 0
     return jsonify({"message": "Cache cleared successfully"})
+
+
+def get_file_extension(filename):
+    """Get file extension from filename"""
+    return os.path.splitext(filename.lower())[1]
+
+
+def is_image_file(filename):
+    """Check if file is an image"""
+    extension = get_file_extension(filename)
+    return extension in IMAGE_EXTENSIONS
+
+
+def is_video_file(filename):
+    """Check if file is a video"""
+    extension = get_file_extension(filename)
+    return extension in VIDEO_EXTENSIONS
+
+
+def get_media_from_discord_channel():
+    """Fetch media files from Discord channel with caching"""
+    global media_cache, media_cache_timestamp
+
+    current_time = time.time()
+
+    # Use cache if it's fresh
+    if current_time - media_cache_timestamp < MEDIA_CACHE_DURATION and media_cache:
+        return media_cache
+
+    max_retries = 3
+    retry_delay = 1
+
+    for attempt in range(max_retries):
+        try:
+            headers = get_discord_headers()
+            url = f"{DISCORD_API_BASE}/channels/{MEDIA_CHANNEL_ID}/messages"
+
+            all_messages = []
+            before = None
+
+            # Fetch multiple pages of messages to get more media
+            for page in range(5):  # Fetch up to 5 pages (500 messages)
+                params = {'limit': 100}
+                if before:
+                    params['before'] = before
+
+                response = requests.get(url, headers=headers, params=params, timeout=10)
+
+                if response.status_code == 429:  # Rate limited
+                    retry_after = int(response.headers.get('Retry-After', retry_delay))
+                    logger.warning(f"Rate limited while fetching media, waiting {retry_after} seconds")
+                    time.sleep(retry_after)
+                    continue
+
+                if response.status_code == 401:
+                    logger.error("Discord API unauthorized - check bot token")
+                    return {"images": [], "videos": []}
+
+                if response.status_code != 200:
+                    logger.error(f"Discord API error: {response.status_code} - {response.text}")
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay * (2 ** attempt))
+                        continue
+                    return {"images": [], "videos": []}
+
+                messages = response.json()
+                if not messages:
+                    break
+
+                all_messages.extend(messages)
+                before = messages[-1]['id']
+
+            # Process messages to extract media files
+            images = []
+            videos = []
+
+            for message in all_messages:
+                if message.get('attachments'):
+                    for attachment in message['attachments']:
+                        filename = attachment['filename']
+                        url = attachment['url']
+                        size = attachment.get('size', 0)
+
+                        media_info = {
+                            'filename': filename,
+                            'url': url,
+                            'size': size,
+                            'message_id': message['id'],
+                            'timestamp': message['timestamp'],
+                            'author': message['author'].get('username', 'Unknown')
+                        }
+
+                        if is_image_file(filename):
+                            images.append(media_info)
+                        elif is_video_file(filename):
+                            videos.append(media_info)
+
+            # Sort by timestamp (latest first)
+            images.sort(key=lambda x: x['timestamp'], reverse=True)
+            videos.sort(key=lambda x: x['timestamp'], reverse=True)
+
+            media_data = {
+                "images": images,
+                "videos": videos
+            }
+
+            # Update cache
+            media_cache = media_data
+            media_cache_timestamp = current_time
+
+            logger.info(f"Updated media cache: {len(images)} images, {len(videos)} videos")
+            return media_data
+
+        except requests.RequestException as e:
+            logger.error(f"Request error while fetching media (attempt {attempt + 1}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay * (2 ** attempt))
+                continue
+            return {"images": [], "videos": []}
+        except Exception as e:
+            logger.error(f"Unexpected error fetching media: {e}")
+            return {"images": [], "videos": []}
+
+    return {"images": [], "videos": []}
+
+
+def download_media_file(url, filename):
+    """Download media file from Discord CDN"""
+    try:
+        headers = {
+            'User-Agent': 'CloudSMP-Shop-Bot/1.0'
+        }
+
+        response = requests.get(url, headers=headers, timeout=30, stream=True)
+
+        if response.status_code == 200:
+            # Create temporary file
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=get_file_extension(filename))
+
+            # Download in chunks
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    temp_file.write(chunk)
+
+            temp_file.close()
+            return temp_file.name
+        else:
+            logger.error(f"Failed to download media: {response.status_code}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error downloading media file: {e}")
+        return None
+
+
+@app.route('/api/media/<media_type>/<int:number>')
+def get_media(media_type, number):
+    """Get media file by type and number (1-indexed)"""
+    try:
+        # Validate media type
+        if media_type not in ['image', 'video']:
+            return jsonify({"error": "Invalid media type. Use 'image' or 'video'"}), 400
+
+        # Validate number
+        if number < 1:
+            return jsonify({"error": "Number must be 1 or greater"}), 400
+
+        # Get media data from Discord
+        media_data = get_media_from_discord_channel()
+
+        if media_type == 'image':
+            media_list = media_data['images']
+        else:  # video
+            media_list = media_data['videos']
+
+        # Check if requested number exists
+        if number > len(media_list):
+            return jsonify({
+                "error": f"Media not found. Only {len(media_list)} {media_type}s available"
+            }), 404
+
+        # Get the media file (convert to 0-indexed)
+        media_file = media_list[number - 1]
+
+        # Option 1: Redirect to Discord CDN URL (faster, but depends on Discord)
+        if request.args.get('direct') == 'true':
+            return redirect(media_file['url'])
+
+        # Option 2: Proxy the file through our API (slower, but more reliable)
+        try:
+            # Download the file
+            temp_file_path = download_media_file(media_file['url'], media_file['filename'])
+
+            if temp_file_path:
+                # Determine content type based on extension
+                extension = get_file_extension(media_file['filename'])
+                content_type_map = {
+                    '.png': 'image/png',
+                    '.jpg': 'image/jpeg',
+                    '.jpeg': 'image/jpeg',
+                    '.gif': 'image/gif',
+                    '.webp': 'image/webp',
+                    '.bmp': 'image/bmp',
+                    '.tiff': 'image/tiff',
+                    '.svg': 'image/svg+xml',
+                    '.mp4': 'video/mp4',
+                    '.mov': 'video/quicktime',
+                    '.avi': 'video/x-msvideo',
+                    '.mkv': 'video/x-matroska',
+                    '.webm': 'video/webm',
+                    '.flv': 'video/x-flv',
+                    '.wmv': 'video/x-ms-wmv',
+                    '.m4v': 'video/x-m4v'
+                }
+
+                content_type = content_type_map.get(extension, 'application/octet-stream')
+
+                def remove_temp_file():
+                    try:
+                        os.unlink(temp_file_path)
+                    except:
+                        pass
+
+                # Send file and clean up after
+                response = send_file(
+                    temp_file_path,
+                    mimetype=content_type,
+                    as_attachment=False,
+                    download_name=media_file['filename']
+                )
+
+                # Clean up temp file after sending
+                response.call_on_close(remove_temp_file)
+
+                return response
+            else:
+                # Fallback to redirect if download fails
+                return redirect(media_file['url'])
+
+        except Exception as e:
+            logger.error(f"Error serving media file: {e}")
+            # Fallback to redirect
+            return redirect(media_file['url'])
+
+    except Exception as e:
+        logger.error(f"Error in get_media endpoint: {e}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+@app.route('/api/media/<media_type>/info/<int:number>')
+def get_media_info(media_type, number):
+    """Get media file information without downloading"""
+    try:
+        # Validate media type
+        if media_type not in ['image', 'video']:
+            return jsonify({"error": "Invalid media type. Use 'image' or 'video'"}), 400
+
+        # Validate number
+        if number < 1:
+            return jsonify({"error": "Number must be 1 or greater"}), 400
+
+        # Get media data from Discord
+        media_data = get_media_from_discord_channel()
+
+        if media_type == 'image':
+            media_list = media_data['images']
+        else:  # video
+            media_list = media_data['videos']
+
+        # Check if requested number exists
+        if number > len(media_list):
+            return jsonify({
+                "error": f"Media not found. Only {len(media_list)} {media_type}s available"
+            }), 404
+
+        # Get the media file info
+        media_file = media_list[number - 1]
+
+        return jsonify({
+            "number": number,
+            "type": media_type,
+            "filename": media_file['filename'],
+            "size": media_file['size'],
+            "timestamp": media_file['timestamp'],
+            "author": media_file['author'],
+            "message_id": media_file['message_id'],
+            "direct_url": media_file['url'],
+            "api_url": f"/api/media/{media_type}/{number}"
+        })
+
+    except Exception as e:
+        logger.error(f"Error in get_media_info endpoint: {e}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+@app.route('/api/media/<media_type>/list')
+def list_media(media_type):
+    """List all available media files of a type"""
+    try:
+        # Validate media type
+        if media_type not in ['image', 'video']:
+            return jsonify({"error": "Invalid media type. Use 'image' or 'video'"}), 400
+
+        # Get media data from Discord
+        media_data = get_media_from_discord_channel()
+
+        if media_type == 'image':
+            media_list = media_data['images']
+        else:  # video
+            media_list = media_data['videos']
+
+        # Format response
+        formatted_list = []
+        for i, media_file in enumerate(media_list, 1):
+            formatted_list.append({
+                "number": i,
+                "filename": media_file['filename'],
+                "size": media_file['size'],
+                "timestamp": media_file['timestamp'],
+                "author": media_file['author'],
+                "api_url": f"/api/media/{media_type}/{i}",
+                "info_url": f"/api/media/{media_type}/info/{i}"
+            })
+
+        return jsonify({
+            "type": media_type,
+            "total": len(media_list),
+            "files": formatted_list
+        })
+
+    except Exception as e:
+        logger.error(f"Error in list_media endpoint: {e}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+@app.route('/api/media/stats')
+def get_media_stats():
+    """Get media statistics"""
+    try:
+        media_data = get_media_from_discord_channel()
+
+        return jsonify({
+            "total_images": len(media_data['images']),
+            "total_videos": len(media_data['videos']),
+            "total_media": len(media_data['images']) + len(media_data['videos']),
+            "cache_age_seconds": int(time.time() - media_cache_timestamp) if media_cache_timestamp > 0 else 0,
+            "supported_image_formats": list(IMAGE_EXTENSIONS),
+            "supported_video_formats": list(VIDEO_EXTENSIONS)
+        })
+
+    except Exception as e:
+        logger.error(f"Error in get_media_stats endpoint: {e}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+@app.route('/api/admin/clear-media-cache', methods=['POST'])
+def clear_media_cache():
+    """Clear media cache"""
+    global media_cache, media_cache_timestamp
+    media_cache = {}
+    media_cache_timestamp = 0
+    return jsonify({"message": "Media cache cleared successfully"})
 
 
 if __name__ == '__main__':
