@@ -33,20 +33,17 @@ cache_timestamp = 0
 CACHE_DURATION = 60  # 1 minute instead of 5 minutes
 
 
-
 # Media channel configuration
 MEDIA_CHANNEL_ID = 1390701938999558318  # The channel ID you specified
 
 # Media type mappings
-IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.svg'}
-VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v'}
+IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.svg'}
+VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.gif'}  # GIFs are treated as videos since Discord converts them to MP4
 
 # Cache for media files
 media_cache = {}
 media_cache_timestamp = 0
 MEDIA_CACHE_DURATION = 300  # 5 minutes cache for media
-
-
 
 
 def get_discord_headers():
@@ -775,6 +772,44 @@ def get_file_extension(filename):
     return os.path.splitext(filename.lower())[1]
 
 
+def is_discord_gif(attachment):
+    """Check if attachment is a GIF converted to MP4 by Discord"""
+    # Discord converts GIFs to MP4 but keeps original filename or adds indicators
+    filename = attachment.get('filename', '').lower()
+    url = attachment.get('url', '')
+    content_type = attachment.get('content_type', '')
+
+    # Check various indicators that this is a GIF
+    return (
+            filename.endswith('.gif') or  # Original filename is .gif
+            'gif' in filename or  # Filename contains 'gif'
+            'tenor.com' in url or  # Tenor GIFs
+            'giphy.com' in url or  # Giphy GIFs
+            content_type == 'image/gif' or  # Content type is gif
+            (filename.endswith('.mp4') and ('gif' in url or 'tenor' in url or 'giphy' in url))  # MP4 from GIF services
+    )
+
+
+def get_media_type_from_attachment(attachment):
+    """Determine if attachment should be treated as image, video, or gif"""
+    filename = attachment.get('filename', '').lower()
+    url = attachment.get('url', '')
+
+    # Check if it's a Discord-converted GIF
+    if is_discord_gif(attachment):
+        return 'gif'
+
+    # Check for regular images (excluding .gif since Discord converts them)
+    if is_image_file(filename):
+        return 'image'
+
+    # Check for videos
+    if is_video_file(filename):
+        return 'video'
+
+    return 'unknown'
+
+
 def is_image_file(filename):
     """Check if file is an image"""
     extension = get_file_extension(filename)
@@ -824,14 +859,14 @@ def get_media_from_discord_channel():
 
                 if response.status_code == 401:
                     logger.error("Discord API unauthorized - check bot token")
-                    return {"images": [], "videos": []}
+                    return {"images": [], "videos": [], "gifs": []}
 
                 if response.status_code != 200:
                     logger.error(f"Discord API error: {response.status_code} - {response.text}")
                     if attempt < max_retries - 1:
                         time.sleep(retry_delay * (2 ** attempt))
                         continue
-                    return {"images": [], "videos": []}
+                    return {"images": [], "videos": [], "gifs": []}
 
                 messages = response.json()
                 if not messages:
@@ -843,6 +878,7 @@ def get_media_from_discord_channel():
             # Process messages to extract media files
             images = []
             videos = []
+            gifs = []  # Separate category for GIFs
 
             for message in all_messages:
                 if message.get('attachments'):
@@ -857,28 +893,36 @@ def get_media_from_discord_channel():
                             'size': size,
                             'message_id': message['id'],
                             'timestamp': message['timestamp'],
-                            'author': message['author'].get('username', 'Unknown')
+                            'author': message['author'].get('username', 'Unknown'),
+                            'content_type': attachment.get('content_type', ''),
+                            'is_discord_gif': is_discord_gif(attachment)
                         }
 
-                        if is_image_file(filename):
+                        media_type = get_media_type_from_attachment(attachment)
+
+                        if media_type == 'image':
                             images.append(media_info)
-                        elif is_video_file(filename):
+                        elif media_type == 'gif':
+                            gifs.append(media_info)
+                        elif media_type == 'video':
                             videos.append(media_info)
 
             # Sort by timestamp (latest first)
             images.sort(key=lambda x: x['timestamp'], reverse=True)
             videos.sort(key=lambda x: x['timestamp'], reverse=True)
+            gifs.sort(key=lambda x: x['timestamp'], reverse=True)
 
             media_data = {
                 "images": images,
-                "videos": videos
+                "videos": videos,
+                "gifs": gifs
             }
 
             # Update cache
             media_cache = media_data
             media_cache_timestamp = current_time
 
-            logger.info(f"Updated media cache: {len(images)} images, {len(videos)} videos")
+            logger.info(f"Updated media cache: {len(images)} images, {len(videos)} videos, {len(gifs)} gifs")
             return media_data
 
         except requests.RequestException as e:
@@ -886,7 +930,7 @@ def get_media_from_discord_channel():
             if attempt < max_retries - 1:
                 time.sleep(retry_delay * (2 ** attempt))
                 continue
-            return {"images": [], "videos": []}
+            return {"images": [], "videos": [], "gifs": []}
         except Exception as e:
             logger.error(f"Unexpected error fetching media: {e}")
             return {"images": [], "videos": []}
@@ -928,8 +972,8 @@ def get_media(media_type, number):
     """Get media file by type and number (1-indexed)"""
     try:
         # Validate media type
-        if media_type not in ['image', 'video']:
-            return jsonify({"error": "Invalid media type. Use 'image' or 'video'"}), 400
+        if media_type not in ['image', 'video', 'gif']:
+            return jsonify({"error": "Invalid media type. Use 'image', 'video', or 'gif'"}), 400
 
         # Validate number
         if number < 1:
@@ -940,8 +984,10 @@ def get_media(media_type, number):
 
         if media_type == 'image':
             media_list = media_data['images']
-        else:  # video
+        elif media_type == 'video':
             media_list = media_data['videos']
+        else:  # gif
+            media_list = media_data['gifs']
 
         # Check if requested number exists
         if number > len(media_list):
@@ -962,28 +1008,32 @@ def get_media(media_type, number):
             temp_file_path = download_media_file(media_file['url'], media_file['filename'])
 
             if temp_file_path:
-                # Determine content type based on extension
+                # Determine content type based on extension and type
                 extension = get_file_extension(media_file['filename'])
-                content_type_map = {
-                    '.png': 'image/png',
-                    '.jpg': 'image/jpeg',
-                    '.jpeg': 'image/jpeg',
-                    '.gif': 'image/gif',
-                    '.webp': 'image/webp',
-                    '.bmp': 'image/bmp',
-                    '.tiff': 'image/tiff',
-                    '.svg': 'image/svg+xml',
-                    '.mp4': 'video/mp4',
-                    '.mov': 'video/quicktime',
-                    '.avi': 'video/x-msvideo',
-                    '.mkv': 'video/x-matroska',
-                    '.webm': 'video/webm',
-                    '.flv': 'video/x-flv',
-                    '.wmv': 'video/x-ms-wmv',
-                    '.m4v': 'video/x-m4v'
-                }
 
-                content_type = content_type_map.get(extension, 'application/octet-stream')
+                # Special handling for GIFs (which are actually MP4s from Discord)
+                if media_type == 'gif' or media_file.get('is_discord_gif'):
+                    content_type = 'image/gif'  # Serve as GIF even though it's MP4
+                else:
+                    content_type_map = {
+                        '.png': 'image/png',
+                        '.jpg': 'image/jpeg',
+                        '.jpeg': 'image/jpeg',
+                        '.gif': 'image/gif',
+                        '.webp': 'image/webp',
+                        '.bmp': 'image/bmp',
+                        '.tiff': 'image/tiff',
+                        '.svg': 'image/svg+xml',
+                        '.mp4': 'video/mp4',
+                        '.mov': 'video/quicktime',
+                        '.avi': 'video/x-msvideo',
+                        '.mkv': 'video/x-matroska',
+                        '.webm': 'video/webm',
+                        '.flv': 'video/x-flv',
+                        '.wmv': 'video/x-ms-wmv',
+                        '.m4v': 'video/x-m4v'
+                    }
+                    content_type = content_type_map.get(extension, 'application/octet-stream')
 
                 def remove_temp_file():
                     try:
@@ -1022,8 +1072,8 @@ def get_media_info(media_type, number):
     """Get media file information without downloading"""
     try:
         # Validate media type
-        if media_type not in ['image', 'video']:
-            return jsonify({"error": "Invalid media type. Use 'image' or 'video'"}), 400
+        if media_type not in ['image', 'video', 'gif']:
+            return jsonify({"error": "Invalid media type. Use 'image', 'video', or 'gif'"}), 400
 
         # Validate number
         if number < 1:
@@ -1034,8 +1084,10 @@ def get_media_info(media_type, number):
 
         if media_type == 'image':
             media_list = media_data['images']
-        else:  # video
+        elif media_type == 'video':
             media_list = media_data['videos']
+        else:  # gif
+            media_list = media_data['gifs']
 
         # Check if requested number exists
         if number > len(media_list):
@@ -1055,7 +1107,9 @@ def get_media_info(media_type, number):
             "author": media_file['author'],
             "message_id": media_file['message_id'],
             "direct_url": media_file['url'],
-            "api_url": f"/api/media/{media_type}/{number}"
+            "api_url": f"/api/media/{media_type}/{number}",
+            "is_discord_gif": media_file.get('is_discord_gif', False),
+            "content_type": media_file.get('content_type', '')
         })
 
     except Exception as e:
@@ -1068,16 +1122,18 @@ def list_media(media_type):
     """List all available media files of a type"""
     try:
         # Validate media type
-        if media_type not in ['image', 'video']:
-            return jsonify({"error": "Invalid media type. Use 'image' or 'video'"}), 400
+        if media_type not in ['image', 'video', 'gif']:
+            return jsonify({"error": "Invalid media type. Use 'image', 'video', or 'gif'"}), 400
 
         # Get media data from Discord
         media_data = get_media_from_discord_channel()
 
         if media_type == 'image':
             media_list = media_data['images']
-        else:  # video
+        elif media_type == 'video':
             media_list = media_data['videos']
+        else:  # gif
+            media_list = media_data['gifs']
 
         # Format response
         formatted_list = []
@@ -1089,7 +1145,8 @@ def list_media(media_type):
                 "timestamp": media_file['timestamp'],
                 "author": media_file['author'],
                 "api_url": f"/api/media/{media_type}/{i}",
-                "info_url": f"/api/media/{media_type}/info/{i}"
+                "info_url": f"/api/media/{media_type}/info/{i}",
+                "is_discord_gif": media_file.get('is_discord_gif', False)
             })
 
         return jsonify({
@@ -1112,10 +1169,12 @@ def get_media_stats():
         return jsonify({
             "total_images": len(media_data['images']),
             "total_videos": len(media_data['videos']),
-            "total_media": len(media_data['images']) + len(media_data['videos']),
+            "total_gifs": len(media_data['gifs']),
+            "total_media": len(media_data['images']) + len(media_data['videos']) + len(media_data['gifs']),
             "cache_age_seconds": int(time.time() - media_cache_timestamp) if media_cache_timestamp > 0 else 0,
             "supported_image_formats": list(IMAGE_EXTENSIONS),
-            "supported_video_formats": list(VIDEO_EXTENSIONS)
+            "supported_video_formats": list(VIDEO_EXTENSIONS),
+            "note": "GIFs are treated as separate category since Discord converts them to MP4"
         })
 
     except Exception as e:
@@ -1130,7 +1189,6 @@ def clear_media_cache():
     media_cache = {}
     media_cache_timestamp = 0
     return jsonify({"message": "Media cache cleared successfully"})
-
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
